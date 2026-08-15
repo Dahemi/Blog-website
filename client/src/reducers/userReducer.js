@@ -1,6 +1,20 @@
 
 import Cookies from "js-cookie";
-export function userReducer(state = Cookies.get("user") ? JSON.parse(Cookies.get("user")) : null, action) {
+
+// A malformed/empty "user" cookie must not throw here: this runs while the
+// store is being created, so a parse error takes down the whole app.
+const storedUser = () => {
+  const raw = Cookies.get("user");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    Cookies.remove("user");
+    return null;
+  }
+};
+
+export function userReducer(state = storedUser(), action) {
   switch (action.type) {
     case "LOGIN":
       return action.payload;

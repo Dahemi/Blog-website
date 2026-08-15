@@ -68,8 +68,13 @@ function Auth() {
         return;
       }
       if (vo === false) {
-        setError('An OTP has been send to your mail for verification')
+        setError('Sending an OTP to your mail for verification...')
         const datas = await sendmail(temail, name);
+        if (datas?.msg !== "ok") {
+          setError("Could not send the verification email. Please try again.");
+          return;
+        }
+        setError('An OTP has been sent to your mail for verification')
         scs(true);
       }
     }
@@ -103,7 +108,11 @@ function Auth() {
       }, 2000);
     } catch (error) {
       // console.log(error)
-      setError(error.response.data.message);
+      setSuccess("");
+      setError(
+        error.response?.data?.message ||
+        "Could not reach the server. Please try again."
+      );
     }
   };
 
@@ -128,7 +137,11 @@ function Auth() {
         navigate("/");
       }, 2000);
     } catch (error) {
-      setError(error.response.data.message);
+      setSuccess("");
+      setError(
+        error.response?.data?.message ||
+        "Could not reach the server. Please try again."
+      );
     }
   };
   const verifyOTP = async () => {

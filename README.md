@@ -1,4 +1,10 @@
 # Blogging Website Version 2.0
+
+> **Fork notice.** This repository is a fork of
+> [Prashant0664/Blog-website](https://github.com/Prashant0664/Blog-website),
+> maintained here by our team. All credit for the original project goes to its
+> upstream authors. See [Team setup](#team-setup) below for how to run it locally.
+
 *For **Hacktoberfest** please refer [Contributing.md](https://github.com/Prashant0664/Blog-website/blob/master/CONTRIBUTING.md)* <br/>
 
 For older version checkout the branch named *version1*
@@ -129,6 +135,58 @@ _IMP: Seperate setup of both frontend and backend is given in *client* and *back
    ```
 
 8. Open your web browser and navigate to `http://localhost:3000` to access the Blogging Website.
+
+---
+
+## Team setup
+
+Steps for teammates cloning this fork.
+
+### 1. Environment files
+
+Both `backend/.env` and `client/.env` are **gitignored** and will not arrive with
+the clone. Copy the templates and fill them in:
+
+```bash
+cp backend/.env.example backend/.env
+cp client/.env.example client/.env
+```
+
+Ask the project owner for the real values — send them through a password manager
+or another private channel, **never** in a GitHub issue, PR, or chat message.
+
+`client/.env` is read by Create React App only at startup, so restart
+`npm start` after editing it.
+
+### 2. Run both servers
+
+```bash
+cd backend && npm install && npm start   # http://localhost:5002
+cd client  && npm install && npm start   # http://localhost:3000
+```
+
+### 3. Seed sample content (optional)
+
+A fresh database has no posts. To create one sample author and one sample blog
+post:
+
+```bash
+cd backend && node seed/sampleblog.js
+```
+
+The script is safe to re-run and prints the seeded author's login details. Edit
+the `AUTHOR` / `POST` objects at the top of `seed/sampleblog.js` to add more.
+
+### Notes
+
+- `category` on a post must be one of `food`, `travelling`, `lifestyle`, `tech`
+  (enforced by the schema in `backend/models/Post.js`).
+- Google sign-in needs `http://localhost:5002/auth/google/callback` registered as
+  an authorized redirect URI in the Google Cloud console.
+- Signup sends an OTP by email, so `EMAIL_ID` / `PASS` must be set for
+  registration to complete. `PASS` is a Gmail **App Password**.
+- If everyone shares one MongoDB Atlas connection string, you are all working
+  against the **same database** — one person's test data is visible to everyone.
 
 ---
 

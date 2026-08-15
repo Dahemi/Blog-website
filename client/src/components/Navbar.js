@@ -79,7 +79,7 @@ function Navbar({ postpage }) {
         `${process.env.REACT_APP_BACKEND_URL}/logout`, { withCredentials: true }
       );
       if (data) {
-        Cookies.set("user", "");
+        Cookies.remove("user");
         Cookies.remove("sessionId");
         clearCookie("sessionId");
         dispatch({
