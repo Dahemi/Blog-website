@@ -14,7 +14,7 @@ const uploadRoutes = require("./routes/upload.js");
 const postRoutes = require("./routes/post.js");
 var cookieParser = require('cookie-parser')
 var cookieSession = require("cookie-session");
-var MongoDBStore = require("connect-mongodb-session")(session);
+const MongoStore = require("connect-mongo");
 require('dotenv').config();
 app.use(
   cors({
@@ -27,18 +27,6 @@ app.use(
 
 mongoose.set("strictQuery", false);
 mongoose.connect(keys.MONGO_URI)
-
-var store = new MongoDBStore(
-  {
-    uri: keys.MONGO_URI,
-    collection: "mySessions",
-  },
-  function (error) {
-    if (error) {
-      // console.log("err", error);
-    }
-  }
-);
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -56,6 +44,10 @@ app.use(session({
   secret: keys.COOKIE_KEY,
   resave: false,
   saveUninitialized: true,
+  store: MongoStore.create({
+    mongoUrl: keys.MONGO_URI,
+    collectionName: "mySessions",
+  }),
   cookie: {
     maxAge: 15 * 24 * 60 * 60 * 1000, // Uncomment if needed for cookie lifespan
     sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax", // "none" for cross-site cookies in production
