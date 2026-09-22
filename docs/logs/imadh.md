@@ -1,11 +1,12 @@
 # Security Work Log — Imadh
 
 Format per finding: **Vulnerability** → **Fix applied** → **Security contribution** → **Justification**.
-Branch for this work: `fix/A-V14-jwt-refresh`.
 
 ---
 
 ## [CWE-613] Access tokens lived for 15 days and could never be revoked (V14)
+
+Branch for this work: `fix/A-V14-jwt-refresh`.
 
 - **Vulnerability:** `backend/helper/token.js` signed every JWT with whatever lifetime the caller passed, and all call sites passed `"15d"` — `register` and `login` in `backend/controllers/user.js` (pre-change lines 74 and 785), `POST /login/success` in `backend/routes/user.js` (pre-change line 173), and the `register_google` helper (pre-change line 116). No `expiresIn` default existed, so nothing stopped a long-lived token being issued. Because the JWT was self-contained and stateless, the server had **no mechanism to invalidate it**: `GET /logout` only cleared client-side cookies while the token kept working for the remainder of its 15-day window. A token captured via XSS, browser history, or a log file could therefore be replayed for up to 15 days, and neither logout nor a password change ended existing sessions. `authUser` in `backend/middleware/auth.js` additionally answered a blanket `400` for both a missing and an expired token, so a client could not distinguish an expired session from a malformed request. Mapped to CWE-613 (Insufficient Session Expiration) / OWASP A07:2021.
 
