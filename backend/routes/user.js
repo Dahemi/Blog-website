@@ -1,8 +1,16 @@
-
 const express = require("express");
 const keys = require("../config/keys");
 
 const { generateToken } = require("../helper/token");
+// [CWE-613] Fix: session continuity now comes from rotating server-side refresh tokens.
+const {
+  revokeRefreshToken,
+  clearRefreshCookie,
+  issueRefreshToken,
+  setRefreshCookie,
+  REFRESH_COOKIE_NAME,
+} = require("../helper/refreshToken");
+const { refreshAccessToken } = require("../controllers/refreshToken");
 const {
   getallLikes,
   register,
@@ -33,23 +41,20 @@ const {
   likes,
   checklikes,
   deletelikes,
-  showLikemark
+  showLikemark,
 } = require("../controllers/user");
 const {
   sendmail,
   checkifverify,
   verifycode,
-  checkotpv
-} = require("../controllers/verifyemail")
+  checkotpv,
+} = require("../controllers/verifyemail");
 
-const {
-  google_auth,
-  google_auth_callback,
-} = require("../controllers/Auth")
+const { google_auth, google_auth_callback } = require("../controllers/Auth");
 
-var passport = require('passport')
-const OAuthStrategy = require('passport-oauth').OAuthStrategy;
-var GoogleStrategy = require('passport-google-oidc');
+var passport = require("passport");
+const OAuthStrategy = require("passport-oauth").OAuthStrategy;
+var GoogleStrategy = require("passport-google-oidc");
 
 const router = express.Router();
 const app = express();
@@ -61,6 +66,8 @@ router.post("/checkotpv", checkotpv);
 
 router.post("/checkifverify", checkifverify);
 router.post("/login", login);
+// [CWE-613] Fix: dedicated endpoint to exchange a refresh token for a new access token.
+router.post("/auth/refresh", refreshAccessToken);
 router.post("/sendmail", sendmail);
 router.post("/verifycode", verifycode);
 router.put("/uploadprofile", authUser, uploadprofile);
@@ -92,7 +99,6 @@ router.post("/searchresult", searchresult);
 router.post("/checkfollow", checkfollowing);
 router.post("/changeabout", changeabout);
 
-
 const register_google = async (req) => {
   try {
     const { name, temail, password, image } = req.body;
@@ -100,8 +106,7 @@ const register_google = async (req) => {
     const check = await User.findOne({ temail });
     if (check) {
       return res.status(400).json({
-        message:
-          "This email already exists,try again with a different email",
+        message: "This email already exists,try again with a different email",
       });
     }
 
@@ -111,7 +116,7 @@ const register_google = async (req) => {
       email: temail,
       password: hashed_password,
       verify: true,
-      picture: image
+      picture: image,
     }).save();
     const token = generateToken({ id: user._id.toString() }, "15d");
     res.send({
@@ -125,7 +130,7 @@ const register_google = async (req) => {
     // console.log(error);
     return res.status(500).json({ message: error.message });
   }
-}
+};
 
 // passport.use(new GoogleStrategy({
 //   clientID: process.env.GOOGLE_CLIENT,
@@ -149,17 +154,22 @@ const register_google = async (req) => {
 //   "/auth/google/callback",
 //   passport.authenticate("google", {
 //     failureRedirect: "/login/failed"
-//   }), 
+//   }),
 //   google_auth_callback
 // );
 
-router.get("/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+router.get(
+  "/auth/google",
+  passport.authenticate("google", { scope: ["profile", "email"] }),
+);
 
-router.get("/auth/google/callback", passport.authenticate("google", {
-  successRedirect: `${keys.FRONTEND_URL}/`,
-  failureRedirect: `${keys.FRONTEND_URL}/login`
-}))
-
+router.get(
+  "/auth/google/callback",
+  passport.authenticate("google", {
+    successRedirect: `${keys.FRONTEND_URL}/`,
+    failureRedirect: `${keys.FRONTEND_URL}/login`,
+  }),
+);
 
 router.get("/login/failed", (req, res) => {
   res.status(401).json({
@@ -170,7 +180,11 @@ router.get("/login/failed", (req, res) => {
 
 router.post("/login/success", async (req, res) => {
   if (req.isAuthenticated()) {
-    const token = generateToken({ id: req.user._id.toString() }, "15d");
+    // [CWE-613] Fix: issue a 15m access token (default) and hand back a rotating refresh
+    // cookie, instead of a single 15-day JWT that could not be revoked.
+    const token = generateToken({ id: req.user._id.toString() });
+    const { rawToken } = await issueRefreshToken(req.user._id);
+    setRefreshCookie(res, rawToken);
     return res.status(201).send({
       id: req.user._id,
       name: req.user.name,
@@ -201,14 +215,17 @@ router.get("/logout", async (req, res) => {
         return res.status(400).json("Couldn't logout");
       }
     });
-    res.cookie('session', '', { expires: new Date(0), });
+    // [CWE-613] Fix: revoke the server-side refresh token on logout. Previously logout
+    // only cleared cookies, leaving a long-lived credential able to mint new tokens.
+    const rawToken = req.cookies ? req.cookies[REFRESH_COOKIE_NAME] : null;
+    await revokeRefreshToken(rawToken);
+    clearRefreshCookie(res);
+    res.cookie("session", "", { expires: new Date(0) });
     res.clearCookie("sessionId");
     res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 });
-
-
 
 module.exports = router;
