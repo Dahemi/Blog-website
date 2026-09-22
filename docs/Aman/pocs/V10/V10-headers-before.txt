@@ -1,0 +1,13 @@
+﻿HTTP/1.1 500 Internal Server Error
+X-Powered-By: Express
+Vary: Origin
+Access-Control-Allow-Credentials: true
+Content-Type: application/json; charset=utf-8
+Content-Length: 77
+ETag: W/"4d-YPLYqFy6BPcuooNcLJT6Yi8X98o"
+Set-Cookie: connect.sid=s%3AQH67XjR0m7Y9JnjiU6W3pfx4GOSGv90y.DOxCgzE1tad0RFSK9xygWH5949SGuOs1t%2FQchSyZr30; Path=/; Expires=Wed, 07 Oct 2026 21:10:19 GMT; HttpOnly; SameSite=Lax
+Date: Tue, 22 Sep 2026 21:10:19 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"message":"Cannot destructure property 'password' of 'user' as it is null."}
