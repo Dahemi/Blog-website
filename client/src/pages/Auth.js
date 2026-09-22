@@ -11,6 +11,7 @@ import {
   sendmail,
   checkotpv
 } from "../helpers/index"
+import PasswordStrength from "../components/PasswordStrength";
 
 function Auth() {
   const dispatch = useDispatch();
@@ -263,6 +264,11 @@ function Auth() {
               onChange={handleRegisterChange}
             />
           </div>
+          {state === "Sign Up" ? (
+            <PasswordStrength password={password} userInputs={[name, email]} />
+          ) : (
+            ""
+          )}
           {(cs) && state === "Sign Up" ?
             <div className="input">
               <input

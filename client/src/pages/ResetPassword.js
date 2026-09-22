@@ -2,6 +2,7 @@ import axios from "axios";
 import { useState } from "react";
 import "./resetPassword.css";
 import { Link, useNavigate, Navigate } from "react-router-dom";
+import PasswordStrength from "../components/PasswordStrength";
 
 function ResetPassword() {
   const [email, setEmail] = useState("");
@@ -69,10 +70,12 @@ function ResetPassword() {
   }
   const changep = async (e) => {
     e.preventDefault();
-    if (pass.length <= 8) {
-      alert("PASSWORD LENGTH SHOULD BE MORE THAN 8")
-      return;
-    }
+    // V15: this used to check pass.length <= 8 client-side — a stale rule left
+    // over from before the server enforced anything at all. The real policy
+    // (12-char minimum, zxcvbn score, 72-byte max) is enforced server-side in
+    // validatePassword(); its message comes back through the existing
+    // `else { alert(data.message) }` branch below, so no client-side length
+    // check is needed here.
     if (!pass) {
       return;
     }
@@ -147,6 +150,7 @@ function ResetPassword() {
             onChange={e => { setpass(e.target.value) }}
             className="user-search-input"
           />
+          <PasswordStrength password={pass} userInputs={[foundUser?.email]} />
           <button onClick={e => changep(e)} >Confirm</button>
 
         </form>
