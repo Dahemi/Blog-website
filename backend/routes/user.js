@@ -61,6 +61,20 @@ const app = express();
 const { authUser } = require("../middleware/auth");
 // app.use(passport.initialize());
 // app.use(passport.session());
+
+// [CWE-384] Fix: promisified session helpers. After authentication succeeds we rotate the
+// session identifier and only then re-establish passport's identity on the new session,
+// so the response is not sent before the rotation has actually completed.
+const regenerateSession = (req) =>
+  new Promise((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+
+const loginIntoFreshSession = (req, user) =>
+  new Promise((resolve, reject) => {
+    req.login(user, (err) => (err ? reject(err) : resolve()));
+  });
+
 router.post("/register", register);
 router.post("/checkotpv", checkotpv);
 
@@ -166,9 +180,27 @@ router.get(
 router.get(
   "/auth/google/callback",
   passport.authenticate("google", {
-    successRedirect: `${keys.FRONTEND_URL}/`,
     failureRedirect: `${keys.FRONTEND_URL}/login`,
   }),
+  // [CWE-384] Fix: session fixation. Previously this used passport's `successRedirect`,
+  // which kept the session identifier that existed *before* authentication. An identifier
+  // captured or planted pre-login would therefore still be valid post-login. We now handle
+  // the callback ourselves, regenerate the session id, and re-login so the authenticated
+  // identity lives on the new session. The redirect target is unchanged.
+  (req, res) => {
+    const authenticatedUser = req.user;
+    req.session.regenerate((regenerateErr) => {
+      if (regenerateErr) {
+        return res.redirect(`${keys.FRONTEND_URL}/login`);
+      }
+      req.login(authenticatedUser, (loginErr) => {
+        if (loginErr) {
+          return res.redirect(`${keys.FRONTEND_URL}/login`);
+        }
+        return res.redirect(`${keys.FRONTEND_URL}/`);
+      });
+    });
+  },
 );
 
 router.get("/login/failed", (req, res) => {
@@ -180,6 +212,21 @@ router.get("/login/failed", (req, res) => {
 
 router.post("/login/success", async (req, res) => {
   if (req.isAuthenticated()) {
+    // [CWE-384] Fix: rotate the session identifier now that authentication has succeeded.
+    // regenerate() clears the session's data, which includes passport's serialized user,
+    // so re-login with the same user afterwards or req.isAuthenticated() would be false on
+    // subsequent requests and the silent re-auth on the client would break.
+    const authenticatedUser = req.user;
+    try {
+      await regenerateSession(req);
+      await loginIntoFreshSession(req, authenticatedUser);
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: "Un-successfull",
+        user: null,
+      });
+    }
     // [CWE-613] Fix: issue a 15m access token (default) and hand back a rotating refresh
     // cookie, instead of a single 15-day JWT that could not be revoked.
     const token = generateToken({ id: req.user._id.toString() });
