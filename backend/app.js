@@ -84,6 +84,12 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 app.set("trust proxy", 1);
+
+// [CWE-307] Global safety net. Mounted after trust proxy so req.ip is the real
+// client address, and before the routes so it covers every endpoint.
+const { globalLimiter } = require("./middleware/rateLimit");
+app.use(globalLimiter);
+
 // [CWE-613] Note: cookieParser is what exposes the httpOnly refreshToken cookie to
 // req.cookies, which /auth/refresh and /logout rely on.
 app.use(cookieParser());

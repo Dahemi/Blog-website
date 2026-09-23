@@ -1,4 +1,7 @@
 const rateLimit = require("express-rate-limit");
+// ipKeyGenerator collapses an IPv6 address to its /56 subnet. Without it a single
+// IPv6 client gets a fresh key per address and walks straight past the limit.
+const { ipKeyGenerator } = require("express-rate-limit");
 const MongoStore = require("rate-limit-mongo");
 const keys = require("../config/keys");
 
@@ -19,7 +22,7 @@ function ipPlusEmail(req) {
   const email = (req.body && req.body.temail ? req.body.temail : "")
     .toString()
     .toLowerCase();
-  return `${req.ip}:${email}`;
+  return `${ipKeyGenerator(req.ip)}:${email}`;
 }
 
 const message = { message: "Too many attempts. Please try again later." };
