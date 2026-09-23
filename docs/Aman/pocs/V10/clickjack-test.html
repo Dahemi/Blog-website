@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Clickjacking PoC - V10</title>
+  </head>
+  <body style="font-family: sans-serif; padding: 20px">
+    <h2>Attacker's website</h2>
+    <p>
+      If the real login form renders below, <code>X-Frame-Options</code> is
+      missing and the site can be framed.
+    </p>
+    <hr />
+    <iframe
+      src="http://localhost:3000/auth"
+      width="900"
+      height="650"
+      style="border: 3px solid red"
+    ></iframe>
+  </body>
+</html>

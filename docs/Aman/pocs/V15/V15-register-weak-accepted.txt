@@ -1,0 +1,13 @@
+﻿HTTP/1.1 200 OK
+X-Powered-By: Express
+Vary: Origin
+Access-Control-Allow-Credentials: true
+Content-Type: application/json; charset=utf-8
+Content-Length: 399
+ETag: W/"18f-jagmtvQVxHhnWkRjdgnmDQpBvvU"
+Set-Cookie: connect.sid=s%3AQQ-1uMqXS4PiaH6qqwonltwgrgbveun9.KeFysdos6r1ZnCEYl3JY5BH7sCOrfyJ%2FUrR80HCZGHg; Path=/; Expires=Wed, 07 Oct 2026 17:43:55 GMT; HttpOnly; SameSite=Lax
+Date: Tue, 22 Sep 2026 17:43:55 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"6ab2be5b99798cf8a82970a8","name":"weakpasstest","picture":"https://res.cloudinary.com/dmhcnhtng/image/upload/v1643044376/avatars/default_pic_jeaybr.png","token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYjJiZTViOTk3OThjZjhhODI5NzBhOCIsImlhdCI6MTc5MDA5OTAzNSwiZXhwIjoxNzkxMzk1MDM1fQ.5c16a0atbPdfssraorr-lxmZbw2RictG3Kpevu9ujjI","message":"Register Success !","likes":[],"bookmarks":[]}
