@@ -92,13 +92,35 @@ app.use(
     proxy: true,
     secret: keys.COOKIE_KEY,
     resave: false,
-    saveUninitialized: true,
+    // [CWE-613] Fix: stop persisting sessions for visitors who never authenticated.
+    // With `true`, every anonymous request wrote an empty session document to the
+    // mySessions collection and issued a session identifier before any login had
+    // happened. Passport still persists the session on login, because the successful
+    // authentication marks req.session as modified.
+    saveUninitialized: false,
+    // [CWE-613] Fix: express-session names its cookie "connect.sid" by default, but logout
+    // in routes/user.js already calls res.clearCookie("sessionId") and the client removes
+    // "sessionId" as well. Under the default name those calls deleted a cookie that never
+    // existed, so the real session cookie survived logout. Naming it explicitly makes the
+    // existing logout actually clear the session cookie, and stops advertising the
+    // framework to clients.
+    name: "sessionId",
     store: MongoStore.create({
       mongoUrl: keys.MONGO_URI,
       collectionName: "mySessions",
     }),
     cookie: {
       maxAge: 15 * 24 * 60 * 60 * 1000, // Uncomment if needed for cookie lifespan
+      // [CWE-1004] Note: express-session already defaults httpOnly to true. Stated
+      // explicitly so the protection is visible in review and cannot be silently
+      // dropped by a later edit to this block.
+      httpOnly: true,
+      // [CWE-613] Note: deliberately NOT "strict". The Google OAuth callback
+      // (/auth/google/callback) is a cross-site, top-level redirect from Google, and
+      // "strict" withholds the cookie on it — that would drop req.session.passport.user
+      // and break login. "lax" still sends the cookie on the top-level GET callback.
+      // Production is genuinely cross-site (Vercel frontend + separate API host), so it
+      // needs "none" together with secure.
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // "none" for cross-site cookies in production
       secure: process.env.NODE_ENV === "production", // Secure should be true in production (HTTPS)
     },
