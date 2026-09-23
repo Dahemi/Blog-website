@@ -1,6 +1,6 @@
 ## [CWE-384] Session identifier was never rotated, never named, and issued before login (V12)
 
-Branch for this work: `fix/A-V12-session-config` (three commits).
+Branch for this work: `fix/Imadh-V12-session-config`.
 
 - **Vulnerability:** Three weaknesses in the express-session configuration, which now lives in `backend/app.js` (V14 extracted it out of `backend/index.js`, so editing `index.js` would have changed nothing):
   1. **`saveUninitialized: true`** — every request from an unauthenticated visitor created a session document in the `mySessions` collection and was issued a session identifier _before_ any login had occurred. That is unbounded session-store growth, and it is the precondition that session fixation depends on.
