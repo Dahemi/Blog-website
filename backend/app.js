@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const app = express();
-const passport = require("passport");
 const session = require("express-session");
 // const session = require('cookie-session');
 const cors = require("cors");
@@ -123,18 +122,16 @@ app.use(
       httpOnly: true,
       // [CWE-613] Note: deliberately NOT "strict". The Google OAuth callback
       // (/auth/google/callback) is a cross-site, top-level redirect from Google, and
-      // "strict" withholds the cookie on it — that would drop req.session.passport.user
-      // and break login. "lax" still sends the cookie on the top-level GET callback.
-      // Production is genuinely cross-site (Vercel frontend + separate API host), so it
-      // needs "none" together with secure.
+      // "strict" withholds the cookie on it — that would drop the req.session.oidc
+      // stash (state/nonce/PKCE verifier) written before the redirect, and reject every
+      // callback as a state mismatch. "lax" still sends the cookie on the top-level GET
+      // callback. Production is genuinely cross-site (Vercel frontend + separate API
+      // host), so it needs "none" together with secure.
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // "none" for cross-site cookies in production
       secure: process.env.NODE_ENV === "production", // Secure should be true in production (HTTPS)
     },
   }),
 );
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 // --- V13: bound uploads before anything touches the filesystem -------------
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -151,7 +148,6 @@ app.use(
 );
 
 app.use("/", userRoutes);
-require("./servises/passport");
 app.use("/", uploadRoutes);
 app.use("/", postRoutes);
 

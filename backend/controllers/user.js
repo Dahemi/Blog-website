@@ -809,8 +809,8 @@ exports.login = async (req, res) => {
     // This login is stateless — identity travels in the signed JWT and never in req.session
     // — and with `saveUninitialized: false` no session identifier is issued before
     // authentication, so there is no pre-auth session id for an attacker to fixate.
-    // Regeneration is applied where the session genuinely carries identity instead: the
-    // Google OAuth callback and POST /login/success in routes/user.js.
+    // Regeneration is applied where the session genuinely carries identity instead:
+    // controllers/Auth.js's google_auth_callback.
     const token = generateToken({ id: user._id.toString() });
     const { rawToken } = await issueRefreshToken(user._id);
     setRefreshCookie(res, rawToken);
