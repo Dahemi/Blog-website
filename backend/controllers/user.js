@@ -16,7 +16,10 @@ const { validatePassword, BCRYPT_COST } = require("../helper/passwordPolicy");
 
 exports.sendreportmails = async (req, res) => {
   try {
-    const { pid, postid, userid, name1, name2, reason } = req.body;
+    // [CWE-639] Fix: the reporter is the authenticated caller, not a body-supplied id, so a
+    // report can no longer be filed against someone else's account.
+    const { pid, postid, name1, name2, reason } = req.body;
+    const userid = req.user.id;
     const reporter = await User.findById(userid);
     const reported = await User.findById(postid);
     var emailr = reporter.email;
@@ -88,7 +91,10 @@ exports.register = async (req, res) => {
 };
 exports.deletebookmark = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: the actor is taken from the verified JWT, not a body-supplied id, so a
+    // caller can no longer delete another user's bookmark by passing their id.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     if (!user) {
       return res.status(202).json({ msg: "Does not exist" });
@@ -124,7 +130,9 @@ exports.deletebookmark = async (req, res) => {
 };
 exports.deletelikes = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: actor derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     var m = user.likes;
     var f = 0;
@@ -158,7 +166,9 @@ exports.deletelikes = async (req, res) => {
 };
 exports.checklikes = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: actor derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     var m = user.likes;
     if (m.length == 0) {
@@ -184,7 +194,8 @@ exports.checklikes = async (req, res) => {
 };
 exports.getallLikes = async (req, res) => {
   try {
-    const { userid } = req.body;
+    // [CWE-639] Fix: previously returned any user's likes for an id taken from the body.
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid }).select("likes");
     return res.status(201).json(user.likes);
   } catch (error) {
@@ -194,7 +205,8 @@ exports.getallLikes = async (req, res) => {
 };
 exports.getallBookmarks = async (req, res) => {
   try {
-    const { userid } = req.body;
+    // [CWE-639] Fix: previously returned any user's bookmarks for an id from the body.
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid }).select("bookmarks");
     return res.status(201).json(user.bookmarks);
   } catch (error) {
@@ -204,7 +216,9 @@ exports.getallBookmarks = async (req, res) => {
 };
 exports.checkbookmark = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: actor derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     // console.log(user);
     var m = user.bookmarks;
@@ -247,7 +261,10 @@ exports.fetchprof = async (req, res) => {
 };
 exports.bookmark = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: the bookmark is written to the authenticated user's own account, so a
+    // caller can no longer add a bookmark on behalf of somebody else.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     var m = user.bookmarks;
     var f = 0;
@@ -267,8 +284,10 @@ exports.bookmark = async (req, res) => {
       }
       user.bookmarks = m;
     }
+    // [CWE-639] Fix: await the write. The save was fire-and-forget, so the response could be
+    // sent before the bookmark persisted and any failure escaped the catch block silently.
     user.bookmarkslist.set(`${postid}`, true);
-    user.save();
+    await user.save();
     if (f == 1) {
       return res.status(202).json({ msg: "exists" });
     } else {
@@ -281,7 +300,9 @@ exports.bookmark = async (req, res) => {
 };
 exports.likes = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: the like is recorded against the authenticated user, not a body id.
+    const { postid } = req.body;
+    const userid = req.user.id;
     var mt = await User.findOne({ _id: userid }).select("likes likeslist");
     var m = mt.likes;
     var f = 0;
@@ -300,9 +321,11 @@ exports.likes = async (req, res) => {
         m.push(postid);
       }
     }
+    // [CWE-639] Fix: await the write so the like is committed before we respond, and so a
+    // persistence failure is caught instead of becoming an unhandled rejection.
     mt.likes = m;
     mt.likeslist.set(`${postid}`, true);
-    mt.save();
+    await mt.save();
     if (f == 1) {
       return res.status(202).json({ msg: "exists" });
     } else {
@@ -315,7 +338,9 @@ exports.likes = async (req, res) => {
 };
 exports.showbookmark = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: returns the authenticated caller's own bookmarks only. Named `id` to
+    // match the rest of the function, which declares `var userid` further down.
+    const id = req.user.id;
     const data = await User.findById(id).select("bookmarks bookmarkslist");
     if (data.length == 0) {
       return res.status(200).json({ msg: [] });
@@ -372,7 +397,8 @@ exports.showbookmark = async (req, res) => {
 };
 exports.showLikemark = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: returns the authenticated caller's own liked posts only.
+    const id = req.user.id;
     const data = await User.findById(id).select("likes");
     if (data.length == 0) {
       return res.status(200).json({ msg: [] });
@@ -429,7 +455,8 @@ exports.showLikemark = async (req, res) => {
 };
 exports.showmyposts = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: returns the authenticated caller's own posts only.
+    const id = req.user.id;
     const data = await User.findById(id);
 
     var arr = data.posts;
@@ -519,7 +546,10 @@ exports.showyourposts = async (req, res) => {
 };
 exports.follow = async (req, res) => {
   try {
-    const { id, id2 } = req.body;
+    // [CWE-639] Fix: the actor (id) comes from the verified JWT and only the target (id2) is
+    // taken from the body, so nobody can make another user follow someone on their behalf.
+    const { id2 } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     const user2 = await User.findById(id2);
 
@@ -577,7 +607,9 @@ exports.followingcount = async (req, res) => {
 };
 exports.unfollow = async (req, res) => {
   try {
-    const { id, id2 } = req.body;
+    // [CWE-639] Fix: actor (id) from the verified JWT; only the target (id2) from the body.
+    const { id2 } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     const user2 = await User.findById(id2);
     var mm = user2.followerscount;
@@ -617,7 +649,8 @@ exports.unfollow = async (req, res) => {
 };
 exports.fetchfollowing = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: previously returned any user's following list for a body-supplied id.
+    const id = req.user.id;
     const user = await User.findById(id);
     const arr = user.following;
     const resp = [];
@@ -643,7 +676,10 @@ exports.fetchfollowing = async (req, res) => {
 };
 exports.changeabout = async (req, res) => {
   try {
-    const { about, id } = req.body;
+    // [CWE-639] Fix: only the authenticated user can edit their own "about"; the previous
+    // version wrote to whichever id the caller put in the body.
+    const { about } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     user.about = about;
     user.save();
@@ -682,7 +718,9 @@ exports.searchresult = async (req, res) => {
 
 exports.checkfollowing = async (req, res) => {
   try {
-    const { id, id2 } = req.body;
+    // [CWE-639] Fix: actor (id) from the verified JWT; only the target (id2) from the body.
+    const { id2 } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     const arr = user.following;
     if (arr.length == 0) {
@@ -702,7 +740,22 @@ exports.checkfollowing = async (req, res) => {
 
 exports.deletepost = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: owner is derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
+
+    // [CWE-639] Fix: ownership must be enforced on the POST itself, not only on the caller's
+    // posts array. The previous version ran Post.deleteOne({ _id: postid }) with no owner
+    // check at all, so any authenticated user could destroy anybody's post just by knowing
+    // its id. Compare the post's owner against the token subject and reject otherwise.
+    const post = await Post.findById(postid);
+    if (!post) {
+      return res.status(404).json({ mgs: "Post not found" });
+    }
+    if (post.user.toString() !== userid) {
+      return res.status(403).json({ mgs: "Not allowed" });
+    }
+
     await Post.deleteOne({ _id: postid });
     var datas = await User.findById(userid);
     arr = datas.posts;
@@ -713,7 +766,8 @@ exports.deletepost = async (req, res) => {
       }
     }
     datas.posts = arr;
-    datas.save();
+    // [CWE-639] Fix: await the write; the unawaited save could fail after the 200 was sent.
+    await datas.save();
     return res.status(200).json({ mgs: "ok" });
   } catch (error) {
     // console.log("error in deleting post");
@@ -743,6 +797,12 @@ exports.login = async (req, res) => {
     }
     // [CWE-613] Fix: short-lived (15m default) access token plus a rotating refresh
     // cookie, instead of a hardcoded 15-day JWT that could not be revoked.
+    // [CWE-384] Note: no session regeneration is performed on this path, deliberately.
+    // This login is stateless — identity travels in the signed JWT and never in req.session
+    // — and with `saveUninitialized: false` no session identifier is issued before
+    // authentication, so there is no pre-auth session id for an attacker to fixate.
+    // Regeneration is applied where the session genuinely carries identity instead: the
+    // Google OAuth callback and POST /login/success in routes/user.js.
     const token = generateToken({ id: user._id.toString() });
     const { rawToken } = await issueRefreshToken(user._id);
     setRefreshCookie(res, rawToken);
@@ -790,12 +850,10 @@ exports.findOutUser = async (req, res) => {
       if (!user.googleId) {
         res.status(200).json(user);
       } else {
-        return res
-          .status(400)
-          .json({
-            message:
-              "You have account associated with google, trying signing up again using google",
-          });
+        return res.status(400).json({
+          message:
+            "You have account associated with google, trying signing up again using google",
+        });
       }
     } else {
       res.status(404).json({ message: "no such user exists" });

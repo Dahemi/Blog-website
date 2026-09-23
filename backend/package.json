@@ -29,6 +29,7 @@
     "express-session": "^1.18.0",
     "file-type": "^16.5.4",
     "google-auth-library": "^9.14.1",
+    "helmet": "^8.3.0",
     "http-status-codes": "^2.3.0",
     "jsonwebtoken": "^9.0.2",
     "memory-cache": "^0.2.0",
