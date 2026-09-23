@@ -59,8 +59,19 @@ var GoogleStrategy = require("passport-google-oidc");
 const router = express.Router();
 const app = express();
 const { authUser } = require("../middleware/auth");
+const {
+  loginLimiter,
+  registerLimiter,
+  resetCodeLimiter,
+  validateCodeLimiter,
+} = require("../middleware/rateLimit");
 // app.use(passport.initialize());
 // app.use(passport.session());
+router.post("/register", registerLimiter, register);
+router.post("/checkotpv", checkotpv);
+
+router.post("/checkifverify", checkifverify);
+router.post("/login", loginLimiter, login);
 
 // [CWE-384] Fix: promisified session helpers. After authentication succeeds we rotate the
 // session identifier and only then re-establish passport's identity on the new session,
@@ -75,11 +86,7 @@ const loginIntoFreshSession = (req, user) =>
     req.login(user, (err) => (err ? reject(err) : resolve()));
   });
 
-router.post("/register", register);
-router.post("/checkotpv", checkotpv);
 
-router.post("/checkifverify", checkifverify);
-router.post("/login", login);
 // [CWE-613] Fix: dedicated endpoint to exchange a refresh token for a new access token.
 router.post("/auth/refresh", refreshAccessToken);
 router.post("/sendmail", sendmail);
