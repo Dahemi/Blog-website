@@ -54,21 +54,27 @@ var GoogleStrategy = require('passport-google-oidc');
 const router = express.Router();
 const app = express();
 const { authUser } = require("../middleware/auth");
+const {
+  loginLimiter,
+  registerLimiter,
+  resetCodeLimiter,
+  validateCodeLimiter,
+} = require("../middleware/rateLimit");
 // app.use(passport.initialize());
 // app.use(passport.session());
-router.post("/register", register);
+router.post("/register", registerLimiter, register);
 router.post("/checkotpv", checkotpv);
 
 router.post("/checkifverify", checkifverify);
-router.post("/login", login);
+router.post("/login", loginLimiter, login);
 router.post("/sendmail", sendmail);
 router.post("/verifycode", verifycode);
 router.put("/uploadprofile", authUser, uploadprofile);
 router.get("/getUser/:userId", getUser);
 router.post("/findOutUser", findOutUser);
 router.post("/getallBookmarks", getallBookmarks);
-router.post("/sendResetPasswordCode", sendResetPasswordCode);
-router.post("/validateResetCode", validateResetCode);
+router.post("/sendResetPasswordCode", resetCodeLimiter, sendResetPasswordCode);
+router.post("/validateResetCode", validateCodeLimiter, validateResetCode);
 router.post("/changePassword", changePassword);
 router.post("/setbookmark", bookmark);
 router.post("/setlikes", likes);

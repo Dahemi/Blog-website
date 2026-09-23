@@ -38,6 +38,8 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 
 app.set("trust proxy", 1)
+const { globalLimiter } = require("./middleware/rateLimit");
+app.use(globalLimiter);
 app.use(cookieParser())
 app.use(session({
   proxy: true,
