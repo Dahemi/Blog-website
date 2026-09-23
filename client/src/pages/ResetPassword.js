@@ -11,9 +11,12 @@ function ResetPassword() {
   const [foundUser, setFoundUser] = useState(null);
   const [foundsend, setFoundsend] = useState(null);
   const [open, setopen] = useState(null);
+  // [CWE-640] Fix: holds the short-lived reset ticket returned by /validateResetCode. It is
+  // the only thing that authorises the password change — the old flow sent a raw email.
+  const [resetTicket, setResetTicket] = useState("");
 
   const navigate = useNavigate();
- 
+
   const handleInputChange = (event) => {
     setEmail(event.target.value);
   };
@@ -24,18 +27,16 @@ function ResetPassword() {
         `${process.env.REACT_APP_BACKEND_URL}/findOutUser`,
         {
           email,
-        }
+        },
       );
-      
-      setFoundUser(data[0])
 
-
+      setFoundUser(data[0]);
     } catch (error) {
-      if(error.response.status===400){
+      if (error.response.status === 400) {
         alert(error.response.data.message);
         return;
       }
-      if(error.response.status===404){
+      if (error.response.status === 404) {
         alert(error.response.data.message);
         return;
       }
@@ -44,7 +45,9 @@ function ResetPassword() {
   const sendCode = async () => {
     try {
       const { data } = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL}/sendResetPasswordCode`, { email: foundUser.email, code: code });
+        `${process.env.REACT_APP_BACKEND_URL}/sendResetPasswordCode`,
+        { email: foundUser.email, code: code },
+      );
       setFoundsend(true);
     } catch (error) {
       // console.log(error.message);
@@ -52,22 +55,25 @@ function ResetPassword() {
   };
 
   const validate = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
     try {
       const { data } = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL}/validateResetCode`, { email: foundUser.email, code: code });
+        `${process.env.REACT_APP_BACKEND_URL}/validateResetCode`,
+        { email: foundUser.email, code: code },
+      );
       if (data.message === "ok") {
+        // [CWE-640] Fix: the server returns a signed, single-use ticket alongside `ok`.
+        // Keep it — changep() must present it to authorise the password change.
+        setResetTicket(data.resetTicket);
         setFoundsend(false);
         setopen(true);
+      } else {
+        alert(data.message);
       }
-      else {
-        alert(data.message)
-      }
-
     } catch (error) {
       // console.log(error.message)
     }
-  }
+  };
   const changep = async (e) => {
     e.preventDefault();
     // V15: this used to check pass.length <= 8 client-side — a stale rule left
@@ -76,26 +82,31 @@ function ResetPassword() {
     // validatePassword(); its message comes back through the existing
     // `else { alert(data.message) }` branch below, so no client-side length
     // check is needed here.
-    if (!pass) {
+    // The ticket comes from validate(); without it the server rejects the change with 401.
+    if (!pass || !resetTicket) {
       return;
     }
 
     try {
+      // [CWE-620] Fix: changePassword no longer accepts an email. The target user is taken
+      // from the ticket's signed userId claim, so the client cannot choose whose password
+      // gets changed.
       const { data } = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL}/changePassword`, { email: foundUser.email, password: pass });
+        `${process.env.REACT_APP_BACKEND_URL}/changePassword`,
+        { resetTicket, newPassword: pass },
+      );
       if (data.message === "ok") {
         alert("Password Changed");
         setTimeout(() => {
           navigate("/");
         }, 2000);
-      }
-      else {
-        alert(data.message)
+      } else {
+        alert(data.message);
       }
     } catch (error) {
-      alert(error.message)
+      alert(error.message);
     }
-  }
+  };
   return (
     <div className="user-search">
       {" "}
@@ -115,8 +126,10 @@ function ResetPassword() {
         <div className="user-search-results">
           <p>Name: {foundUser.name}</p>
           <p>Email: {foundUser.email}</p>
-          <p>picture: <img className="imgres" src={foundUser.picture} alt="" /></p>
-          <button onClick={sendCode} >send code</button>
+          <p>
+            picture: <img className="imgres" src={foundUser.picture} alt="" />
+          </p>
+          <button onClick={sendCode}>send code</button>
         </div>
       ) : (
         <p className="user-search-no-results">
@@ -131,12 +144,12 @@ function ResetPassword() {
             // id="email-input"
             value={code}
             placeholder="CODE"
-
-            onChange={e => { setcode(e.target.value) }}
+            onChange={(e) => {
+              setcode(e.target.value);
+            }}
             className="user-search-input"
           />
-          <button onClick={validate} >Verify</button>
-
+          <button onClick={validate}>Verify</button>
         </form>
       </div>
       <div className={`${open ? "" : "hidden"}`}>
@@ -147,12 +160,13 @@ function ResetPassword() {
             // id="email-input"
             value={pass}
             placeholder="NEW PASSWORD"
-            onChange={e => { setpass(e.target.value) }}
+            onChange={(e) => {
+              setpass(e.target.value);
+            }}
             className="user-search-input"
           />
           <PasswordStrength password={pass} userInputs={[foundUser?.email]} />
-          <button onClick={e => changep(e)} >Confirm</button>
-
+          <button onClick={(e) => changep(e)}>Confirm</button>
         </form>
       </div>
     </div>

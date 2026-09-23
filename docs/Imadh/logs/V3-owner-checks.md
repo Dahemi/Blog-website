@@ -1,6 +1,6 @@
 ## [CWE-639] User-owned routes trusted a user id supplied in the request body (V3)
 
-Branch for this work: `fix/Imaadh-V3-owner-checks`.
+Branch for this work: `fix/Imadh-V3-owner-checks`.
 
 - **Vulnerability:** Authorization Bypass Through User-Controlled Key (IDOR). Eighteen routes in `backend/routes/user.js` that act on user-owned data had **no authentication middleware at all** — only `PUT /uploadprofile` was guarded. Every one of their controllers then took the _actor_ identity from the request body: `const { postid, userid } = req.body` for the bookmark/like/post/report controllers, `const { about, id } = req.body` for `changeabout`, and `const { id, id2 } = req.body` for `follow`/`unfollow`/`checkfollowing`. Because the id was both unauthenticated and caller-supplied, any client could read or mutate **any** user's data by naming that user:
   - read a victim's private bookmarks and likes (`/getallBookmarks`, `/getallLikes`, `/showbookmarks`, `/showLikemarks`),

@@ -7,7 +7,15 @@ const { generateToken } = require("../helper/token");
 const {
   issueRefreshToken,
   setRefreshCookie,
+  // [CWE-613] Fix: used to end every session for a user after a password change.
+  revokeAllForUser,
 } = require("../helper/refreshToken");
+// [CWE-640] Fix: single-use, purpose-scoped tickets authorise a password change.
+const {
+  issueResetTicket,
+  verifyResetTicket,
+  consumeResetTicket,
+} = require("../helper/resetTicket");
 const Code = require("../models/Code");
 const { sendResetCode } = require("../helper/mail");
 const { sendReportMail } = require("../helper/reportmail");
@@ -863,55 +871,109 @@ exports.findOutUser = async (req, res) => {
   }
 };
 exports.sendResetPasswordCode = async (req, res) => {
+  // [CWE-640] Fix: the response is now identical whether or not the address is registered,
+  // so this endpoint can no longer be used to enumerate accounts. Previously an unknown
+  // email dereferenced null (user._id) and returned 500 while a known email returned 200 —
+  // a trivially observable oracle.
+  const uniformResponse = {
+    message: "If that email address is registered, a reset code has been sent.",
+  };
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
-    await Code.findOneAndRemove({ user: user._id });
-    const code = generateCode(5);
-    const savedCode = await new Code({
-      code,
-      user: user._id,
-    }).save();
-    sendResetCode(user.email, user.name, code);
-    return res.status(200).json({
-      message: "Email reset code has been sent to your email",
-    });
+    if (user) {
+      // Mongoose 8 removed findOneAndRemove(); the original code called it here, so this
+      // endpoint threw a TypeError and 500'd for EVERY email — password reset never worked.
+      await Code.findOneAndDelete({ user: user._id });
+      const code = generateCode(5);
+      await new Code({
+        code,
+        user: user._id,
+      }).save();
+      sendResetCode(user.email, user.name, code);
+    }
+    return res.status(200).json(uniformResponse);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    // Deliberately generic: the failure mode must not correlate with whether the lookup hit.
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 exports.validateResetCode = async (req, res) => {
   try {
     const { email, code } = req.body;
     const user = await User.findOne({ email });
-    const Dbcode = await Code.findOne({ user: user._id });
-    if (Dbcode.code !== code) {
-      return res.status(400).json({
-        message: "Verification code is wrong!",
-      });
+
+    // [CWE-640] Fix: one generic failure covers both "no such user" and "wrong code", so
+    // this endpoint cannot be used to probe which addresses are registered. It also avoids
+    // the TypeError (and 500) the previous version threw when `user` was null.
+    const invalid = { message: "Invalid or expired reset code" };
+    if (!user) {
+      return res.status(400).json(invalid);
     }
-    return res.status(200).json({ message: "ok" });
+
+    const Dbcode = await Code.findOne({ user: user._id });
+    if (!Dbcode || String(Dbcode.code) !== String(code)) {
+      return res.status(400).json(invalid);
+    }
+
+    // [CWE-640] Fix: hand back a short-lived ticket instead of a bare `ok`. Previously the
+    // client received no credential at all, which is why changePassword had to accept
+    // whatever email the caller supplied. The target user is now bound into the ticket.
+    const resetTicket = await issueResetTicket(user._id);
+
+    // Make the emailed code single-use too, so it cannot mint a second ticket.
+    await Code.findOneAndDelete({ user: user._id });
+
+    return res.status(200).json({ message: "ok", resetTicket });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 exports.changePassword = async (req, res) => {
-  const { email, password } = req.body;
+  // [CWE-620] Fix: this endpoint no longer accepts an `email` at all. The previous contract
+  // was `{ email, password }` with no authentication, no code check and no ticket, so any
+  // anonymous caller could overwrite any account's password simply by naming it. The target
+  // user now comes from the verified `userId` claim inside the reset ticket, and nothing in
+  // the request body can influence whose password is changed.
+  const { resetTicket, newPassword } = req.body;
+  const rejected = { message: "Invalid or expired reset ticket" };
   try {
-    // V15: this endpoint previously performed no validation at all — a
-    // single-character password was accepted. (The missing authentication here
-    // is V1, tracked and fixed separately.)
-    const pwCheck = validatePassword(password, [email]);
+    const verified = await verifyResetTicket(resetTicket);
+    if (!verified.ok) {
+      return res.status(401).json(rejected);
+    }
+
+    const user = await User.findById(verified.userId).select("email name");
+    if (!user) {
+      return res.status(401).json(rejected);
+    }
+
+    // V15 password policy preserved. This runs BEFORE the ticket is consumed, so a password
+    // that fails the policy can be retried with the same ticket instead of restarting the
+    // whole flow. Name and email are passed in so zxcvbn penalises passwords derived from
+    // the user's own identity, as V15 intended.
+    const pwCheck = validatePassword(newPassword, [user.email, user.name]);
     if (!pwCheck.ok) {
       return res.status(400).json({ message: pwCheck.message });
     }
-    const cryptedPassword = await bcrypt.hash(password, BCRYPT_COST);
-    await User.findOneAndUpdate(
-      { email },
-      {
-        password: cryptedPassword,
-      },
-    );
+
+    // [CWE-640] Fix: single-use enforcement, consumed atomically before the write so a
+    // replayed ticket can never reach the password update.
+    const consumed = await consumeResetTicket(resetTicket);
+    if (!consumed.ok) {
+      return res.status(401).json(rejected);
+    }
+
+    const cryptedPassword = await bcrypt.hash(newPassword, BCRYPT_COST);
+    await User.findByIdAndUpdate(consumed.userId, {
+      password: cryptedPassword,
+    });
+
+    // [CWE-613] Fix: end every existing session for this account. This was the item the V12
+    // task deferred to V1, and it matters most here — a password reset is exactly when a
+    // stolen refresh token must stop working.
+    await revokeAllForUser(consumed.userId);
+
     return res.status(200).json({ message: "ok" });
   } catch (error) {
     res
