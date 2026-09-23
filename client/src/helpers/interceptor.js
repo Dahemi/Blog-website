@@ -50,7 +50,38 @@ const endSession = (store) => {
   }
 };
 
+// [CWE-639] Fix: read the Authorization header without assuming a plain object. Axios 1.x
+// hands the interceptor an AxiosHeaders instance, which exposes get() rather than only
+// plain properties.
+const existingAuthHeader = (headers) => {
+  if (!headers) return false;
+  if (typeof headers.get === "function") {
+    return Boolean(headers.get("Authorization"));
+  }
+  return Boolean(headers.Authorization);
+};
+
 export const setupAxiosInterceptors = (store) => {
+  // [CWE-639] Fix: attach the caller's access token to every outbound request. The routes
+  // that act on user-owned data now require authentication and derive the actor from the
+  // verified token instead of trusting an id supplied in the request body. Injecting the
+  // header centrally means the ~40 existing helper functions authenticate without having
+  // to edit every call site, which keeps this change small and reviewable.
+  axios.interceptors.request.use((config) => {
+    const user = store.getState().user;
+    const token = user && user.token;
+
+    // Leave a caller-set header alone: uplaodImages, createPost, editPost and
+    // uploadProfilePicture all pass their own token explicitly.
+    if (!token || existingAuthHeader(config.headers)) {
+      return config;
+    }
+
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  });
+
   axios.interceptors.response.use(
     (response) => response,
     async (error) => {
