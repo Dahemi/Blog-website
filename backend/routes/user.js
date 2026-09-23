@@ -87,31 +87,49 @@ router.post("/verifycode", verifycode);
 router.put("/uploadprofile", authUser, uploadprofile);
 router.get("/getUser/:userId", getUser);
 router.post("/findOutUser", findOutUser);
-router.post("/getallBookmarks", getallBookmarks);
+// [CWE-639] Fix: was readable for any userid in the body.
+router.post("/getallBookmarks", authUser, getallBookmarks);
 router.post("/sendResetPasswordCode", sendResetPasswordCode);
 router.post("/validateResetCode", validateResetCode);
 router.post("/changePassword", changePassword);
-router.post("/setbookmark", bookmark);
-router.post("/setlikes", likes);
-router.post("/getallLikes", getallLikes);
-router.post("/deletelikes", deletelikes);
-router.post("/checklikes", checklikes);
-router.post("/deletebookmark", deletebookmark);
-router.post("/checkbookmark", checkbookmark);
-router.post("/reportcontent", sendreportmails);
+// [CWE-639] Fix: require auth and ignore any body-supplied userid on user-owned routes.
+router.post("/setbookmark", authUser, bookmark);
+// [CWE-639] Fix: require auth; owner is derived from the token in the controller.
+router.post("/setlikes", authUser, likes);
+// [CWE-639] Fix: was readable for any userid in the body.
+router.post("/getallLikes", authUser, getallLikes);
+// [CWE-639] Fix: was mutable for any userid in the body.
+router.post("/deletelikes", authUser, deletelikes);
+// [CWE-639] Fix: was mutable for any userid in the body.
+router.post("/checklikes", authUser, checklikes);
+// [CWE-639] Fix: was mutable for any userid in the body.
+router.post("/deletebookmark", authUser, deletebookmark);
+// [CWE-639] Fix: was readable for any userid in the body.
+router.post("/checkbookmark", authUser, checkbookmark);
+// [CWE-639] Fix: reporter identity derived from the token, not the body.
+router.post("/reportcontent", authUser, sendreportmails);
 router.post("/countfollower", followercount);
 router.post("/countfollowing", followingcount);
-router.post("/showbookmarks", showbookmark);
-router.post("/showLikemarks", showLikemark);
+// [CWE-639] Fix: was readable for any id in the body.
+router.post("/showbookmarks", authUser, showbookmark);
+// [CWE-639] Fix: was readable for any id in the body.
+router.post("/showLikemarks", authUser, showLikemark);
 router.post("/fetchprof", fetchprof);
-router.post("/showmyposts", showmyposts);
-router.post("/deletepost", deletepost);
-router.post("/fetchfollowing", fetchfollowing);
-router.post("/startfollow", follow);
-router.post("/unfollow", unfollow);
+// [CWE-639] Fix: returns the authenticated caller's own posts only.
+router.post("/showmyposts", authUser, showmyposts);
+// [CWE-639] Fix: only the owner may delete a post; owner derived from the token.
+router.post("/deletepost", authUser, deletepost);
+// [CWE-639] Fix: returns the authenticated caller's own following list.
+router.post("/fetchfollowing", authUser, fetchfollowing);
+// [CWE-639] Fix: actor from token, target (id2) from body.
+router.post("/startfollow", authUser, follow);
+// [CWE-639] Fix: actor from token, target (id2) from body.
+router.post("/unfollow", authUser, unfollow);
 router.post("/searchresult", searchresult);
-router.post("/checkfollow", checkfollowing);
-router.post("/changeabout", changeabout);
+// [CWE-639] Fix: actor from token, target (id2) from body.
+router.post("/checkfollow", authUser, checkfollowing);
+// [CWE-639] Fix: was editable for any id supplied in the body.
+router.post("/changeabout", authUser, changeabout);
 
 const register_google = async (req) => {
   try {
