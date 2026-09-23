@@ -130,9 +130,17 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// --- V13: bound uploads before anything touches the filesystem -------------
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 app.use(
   fileUpload({
     useTempFiles: true,
+    tempFileDir: require("os").tmpdir(),
+    limits: { fileSize: MAX_UPLOAD_BYTES },
+    abortOnLimit: true,      // reject, don't silently truncate
+    responseOnLimit: "File exceeds the 5 MB limit.",
+    safeFileNames: true,     // strip path separators from the supplied name
+    preserveExtension: 8,
   }),
 );
 
