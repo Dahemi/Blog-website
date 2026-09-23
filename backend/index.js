@@ -1,29 +1,11 @@
-const dotenv = require("dotenv").config();
+// [CWE-613] Refactor: this entrypoint now owns only process-level concerns (env, DB
+// connection, port). The express app was extracted into ./app so that tests can import
+// it with supertest without binding a port or opening a database connection.
 const keys = require("./config/keys");
-const Port = keys.PORT || 5002;
-const express = require("express");
-const app = express();
 const mongoose = require("mongoose");
-const passport = require("passport");
-const session = require("express-session");
-// const session = require('cookie-session');
-const cors = require("cors");
-const fileUpload = require("express-fileupload");
-const userRoutes = require("./routes/user.js");
-const uploadRoutes = require("./routes/upload.js");
-const postRoutes = require("./routes/post.js");
-var cookieParser = require('cookie-parser')
-var cookieSession = require("cookie-session");
-const MongoStore = require("connect-mongo");
-require('dotenv').config();
-app.use(
-  cors({
-    origin: [keys.BACKEND_URL, keys.FRONTEND_URL],
-    // origin: [keys.REACT_APP_BACKEND_URL, keys.REACT_APP_FRONTEND_URL],
-    methods: "GET,POST,PUT,DELETE",
-    credentials: true,
-  })
-);
+const app = require("./app");
+
+const Port = keys.PORT || 5002;
 
 mongoose.set("strictQuery", false);
 mongoose.connect(keys.MONGO_URI)
@@ -71,6 +53,7 @@ app.use("/", userRoutes);
 require("./servises/passport");
 app.use("/", uploadRoutes);
 app.use("/", postRoutes);
+mongoose.connect(keys.MONGO_URI);
 
 app.listen(Port, () => {
   console.log(`server running ${Port}`);
