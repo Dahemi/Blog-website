@@ -5,9 +5,39 @@ Access-Control-Allow-Credentials: true
 Content-Type: application/json; charset=utf-8
 Content-Length: 77
 ETag: W/"4d-YPLYqFy6BPcuooNcLJT6Yi8X98o"
-Set-Cookie: connect.sid=s%3AQH67XjR0m7Y9JnjiU6W3pfx4GOSGv90y.DOxCgzE1tad0RFSK9xygWH5949SGuOs1t%2FQchSyZr30; Path=/; Expires=Wed, 07 Oct 2026 21:10:19 GMT; HttpOnly; SameSite=Lax
-Date: Tue, 22 Sep 2026 21:10:19 GMT
+Set-Cookie: connect.sid=s%3AI-djm-Bb9HdvBRdzc0FUo0MO0g8jcpqG.pFGqfB07Kilt5TT3T7SCCeWHUMcRxRNju0EIaTDs2vQ; Path=/; Expires=Wed, 07 Oct 2026 14:06:55 GMT; HttpOnly; SameSite=Lax
+Date: Tue, 22 Sep 2026 14:06:55 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
 {"message":"Cannot destructure property 'password' of 'user' as it is null."}
+
+
+--- ANALYSIS (captured 22 Sep 2026, before any fix) ---
+Tested against GET /getUser/000000000000000000000000 — a real application
+route, not "/" — because "/" doesn't exist in this app and falls through to
+Express's own finalhandler module, which hardcodes Content-Security-Policy
+and X-Content-Type-Options on its own 404/500 pages regardless of app
+configuration. Testing a real route confirms the app itself has neither.
+
+MISSING (all absent):
+  Content-Security-Policy
+  Strict-Transport-Security
+  X-Frame-Options
+  X-Content-Type-Options
+  Referrer-Policy
+  Permissions-Policy
+
+PRESENT BUT SHOULD NOT BE:
+  X-Powered-By: Express      -> framework fingerprinting, aids V8 exploitation
+
+Also note: Access-Control-Allow-Credentials is set on this response too,
+because index.js:43-46 sets it outside the cors() origin check, on every
+response unconditionally.
+
+Separate minor bug noticed in passing (not V10, worth one line in the
+report's root-cause discussion): GET /getUser/:userId crashes with
+"Cannot destructure property 'password' of 'user' as it is null" when the
+ID doesn't match a user — controllers/user.js does not check whether
+User.findById() returned null before destructuring it.
+

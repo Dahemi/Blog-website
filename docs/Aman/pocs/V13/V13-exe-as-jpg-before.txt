@@ -1,0 +1,42 @@
+﻿curl.exe : Note: Unnecessary use of -X or --request, POST is already inferred.
+At line:1 char:1
++ curl.exe -v -X POST http://localhost:5002/uploadImages -H "Authorizat ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Note: Unnecessa...ready inferred.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+* Host localhost:5002 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying [::1]:5002...
+* Connected to localhost (::1) port 5002
+* using HTTP/1.x
+> POST /uploadImages HTTP/1.1
+
+> Host: localhost:5002
+
+> User-Agent: curl/8.14.1
+
+> Accept: */*
+
+> Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhYjE0MDQ1OWY3NjdjMjk1YzY0Zjg2NSIsImlhdCI6MTc5MDA3OTAyNywiZXhw
+IjoxNzkxMzc1MDI3fQ.43rlpJ0YIyQzlIXbYfap2FDa4ieOwfZJA0tWPETqFKc
+
+> Content-Length: 49456
+
+> Content-Type: multipart/form-data; boundary=------------------------9wZfeTMeCsLN8vlOhMP6Kx
+
+> 
+
+} [49456 bytes data]
+* upload completely sent off: 49456 bytes
+
+100 49456    0     0  100 49456      0  40413  0:00:01  0:00:01 --:--:-- 40438
+100 49456    0     0  100 49456      0  22228  0:00:02  0:00:02 --:--:-- 22237* Recv failure: Connection was reset
+
+100 49456    0     0  100 49456      0  16704  0:00:02  0:00:02 --:--:-- 16702
+* closing connection #0
+curl: (56) Recv failure: Connection was reset

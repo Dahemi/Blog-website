@@ -1,0 +1,17 @@
+Error: Unable to find the session to touch
+    at D:\SLIIT\Year 4\1st semester\SSD\Blog-website\backend\node_modules\connect-mongo\build\main\lib\MongoStore.js:329:37
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+D:\SLIIT\Year 4\1st semester\SSD\Blog-website\backend\controllers\upload.js:38
+          return res.status(400).json({ message: "Upload image failed." });
+                     ^
+
+TypeError: Cannot read properties of undefined (reading 'status')
+    at D:\SLIIT\Year 4\1st semester\SSD\Blog-website\backend\controllers\upload.js:38:22
+    at D:\SLIIT\Year 4\1st semester\SSD\Blog-website\backend\node_modules\cloudinary\lib\utils\index.js:1394:14
+    at IncomingMessage.<anonymous> (D:\SLIIT\Year 4\1st semester\SSD\Blog-website\backend\node_modules\cloudinary\lib\uploader.js:514:9)
+    at IncomingMessage.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1701:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+
+Node.js v24.11.1
+[nodemon] app crashed - waiting for file changes before starting...

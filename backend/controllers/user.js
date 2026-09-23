@@ -12,6 +12,7 @@ const Code = require("../models/Code");
 const { sendResetCode } = require("../helper/mail");
 const { sendReportMail } = require("../helper/reportmail");
 const generateCode = require("../helper/gen_code");
+const { validatePassword, BCRYPT_COST } = require("../helper/passwordPolicy");
 
 exports.sendreportmails = async (req, res) => {
   try {
@@ -45,10 +46,9 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "Please enter a valid email !" });
     }
 
-    if (!validateLength(password, 6, 15)) {
-      return res
-        .status(400)
-        .json({ message: "Enter password between 6 to 15 characters !" });
+    const pwCheck = validatePassword(password, [name, temail]);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ message: pwCheck.message });
     }
 
     const check = await User.findOne({ email: temail });
@@ -58,7 +58,7 @@ exports.register = async (req, res) => {
       });
     }
 
-    const hashed_password = await bcrypt.hash(password, 10);
+    const hashed_password = await bcrypt.hash(password, BCRYPT_COST);
     const user = await new User({
       name: name,
       email: temail,
@@ -840,7 +840,14 @@ exports.validateResetCode = async (req, res) => {
 exports.changePassword = async (req, res) => {
   const { email, password } = req.body;
   try {
-    const cryptedPassword = await bcrypt.hash(password, 12);
+    // V15: this endpoint previously performed no validation at all — a
+    // single-character password was accepted. (The missing authentication here
+    // is V1, tracked and fixed separately.)
+    const pwCheck = validatePassword(password, [email]);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ message: pwCheck.message });
+    }
+    const cryptedPassword = await bcrypt.hash(password, BCRYPT_COST);
     await User.findOneAndUpdate(
       { email },
       {
