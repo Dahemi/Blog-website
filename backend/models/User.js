@@ -20,6 +20,16 @@ const userSchema = new Schema(
     googleId: {
       type: String,
       required: function () { return !this.password },
+      index: true,
+      sparse: true,     // most users have no googleId; sparse keeps the index usable
+      unique: true,     // one Google identity cannot map to two local accounts
+    },
+    // [OIDC] Disambiguates how an account authenticates, so changePassword can refuse
+    // accounts with no local password, and Google-linked accounts are identifiable.
+    authProvider: {
+      type: String,
+      enum: ["local", "google", "both"],
+      default: "local",
     },
     picture: {
       type: String,

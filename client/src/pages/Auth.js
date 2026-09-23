@@ -213,7 +213,6 @@ function Auth() {
             </div> */}
             <div className="social google">
               <img src="/google.jpg" alt="google" />
-              {/* <GoogleOAuthProvider clientId={`${process.env.GOOGLE_CLIENT}`}>...</GoogleOAuthProvider>; */}
               <span onClick={() => signUpWithGoogle()}>Sign In with Google</span>
             </div>
           </div>
@@ -221,7 +220,6 @@ function Auth() {
           <div>
             <div className="social google">
               <img src="/google.jpg" alt="google" />
-              {/* <GoogleOAuthProvider clientId={`${process.env.GOOGLE_CLIENT}`}>...</GoogleOAuthProvider>; */}
               <span onClick={() => signUpWithGoogle()}>Sign Up with Google</span>
             </div>
           </div>
