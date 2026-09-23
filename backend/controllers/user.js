@@ -7,6 +7,7 @@ const Code = require('../models/Code');
 const { sendResetCode } = require("../helper/mail");
 const { sendReportMail } = require("../helper/reportmail");
 const generateCode = require("../helper/gen_code");
+const { loginSchema } = require("../validators/login.schema");
 
 
 exports.sendreportmails = async (req, res) => {
@@ -762,7 +763,11 @@ exports.deletepost = async (req, res) => {
 }
 exports.login = async (req, res) => {
   try {
-    const { temail, password } = req.body;
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid input." });
+    }
+    const { temail, password } = parsed.data;
     const user = await User.findOne({ email: temail });
     if (!user) {
       return res.status(400).json({
