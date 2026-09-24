@@ -80,22 +80,26 @@ export const getLikes = async (id) => {
   }
 }
 export const uplaodImages = async (formData, token = null) => {
-  try {
-    const { data } = await axios.post(
-      `${process.env.REACT_APP_BACKEND_URL}/uploadImages`,
-      formData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "content-type": "multipart/form-data",
-        },
-        withCredentials: true,
-      }
-    );
-    return data;
-  } catch (error) {
-    return error.response.data.message;
-  }
+  // V13: this used to catch the error and return error.response.data.message (a
+  // string) instead of throwing. Every caller (Editor.js, EditorP.js,
+  // UserProfile.js) then does postImg[0].url on the result — on a string, that's
+  // postImg[0] (its first character) and .url on that is undefined, so a rejected
+  // upload silently continued with an undefined image URL instead of surfacing an
+  // error. Every caller already has an outer catch expecting exactly this axios
+  // error shape (error.response.data.message), so simply letting it propagate is
+  // the fix — no caller needs to change.
+  const { data } = await axios.post(
+    `${process.env.REACT_APP_BACKEND_URL}/uploadImages`,
+    formData,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "content-type": "multipart/form-data",
+      },
+      withCredentials: true,
+    }
+  );
+  return data;
 };
 
 export const dataURItoBlob = (dataURI) => {
