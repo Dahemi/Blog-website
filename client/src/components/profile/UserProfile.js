@@ -56,10 +56,10 @@ function UserProfile() {
     const fetchMyProfile = async () => {
       try {
         const myprofile = await getUser(user.id);
-        setDbPic(myprofile._doc.picture);
-        setrawDbAbout(myprofile._doc.about);
-        setDbAbout(myprofile._doc.about);
-        setAbout(myprofile._doc.about);
+        setDbPic(myprofile.picture);
+        setrawDbAbout(myprofile.about);
+        setDbAbout(myprofile.about);
+        setAbout(myprofile.about);
         const data = await getfollowercount(user.id);
         const data2 = await getfollowingcount(user.id);
         setfollcd(data2.data.msg);
