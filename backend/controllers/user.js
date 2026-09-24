@@ -7,6 +7,8 @@ const Code = require('../models/Code');
 const { sendResetCode } = require("../helper/mail");
 const { sendReportMail } = require("../helper/reportmail");
 const generateCode = require("../helper/gen_code");
+const Verify = require("../models/emailverify");
+const { sendVerifyCode } = require("../helper/mailverifymail");
 
 
 exports.sendreportmails = async (req, res) => {
@@ -67,10 +69,33 @@ exports.register = async (req, res) => {
       name: name,
       email: temail,
       password: hashed_password,
-      verify: true,
+      verify: false,
       likeslist:{},
       bookmarkslist:{},
     }).save();
+
+    // Issue a verification code and email it. Account stays unverified and
+    // NO token is returned until the user proves they own the email.
+    const code = generateCode(6);
+    const existing = await Verify.findOne({ mail: temail });
+    if (existing) {
+      existing.otp = code;
+      await existing.save();
+    } else {
+      await Verify.create({ mail: temail, otp: code });
+    }
+    try {
+      sendVerifyCode(temail, name, code);
+    } catch (mailErr) {
+      // Registration still succeeds; user can request a resend.
+    }
+
+    res.send({
+      id: user._id,
+      name: user.name,
+      verify: false,
+      message: "Register Success ! Please verify your email to continue.",
+    });
     const token = generateToken({ id: user._id.toString() }, "15d");
     res.send({
       id: user._id,
@@ -782,6 +807,14 @@ exports.login = async (req, res) => {
         message: "Invalid Credentials. Please Try Again.",
       });
     }
+    if (user.verify === false) {
+      return res.status(403).json({
+        message: "Email not verified. Please verify your email to log in.",
+        needVerify: true,
+        email: user.email,
+      });
+    }
+
     const token = generateToken({ id: user._id.toString() }, "15d");
     res.send({
       id: user._id,
