@@ -1,4 +1,5 @@
 const { validateEmail, validateLength } = require("../helper/validation");
+const { toPublicUser } = require("../helper/userDto");
 const User = require("../models/User");
 const Post = require("../models/Post");
 const bcrypt = require("bcrypt");
@@ -883,9 +884,18 @@ exports.uploadprofile = async (req, res) => {
 exports.getUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await User.findById(userId);
-    const { password, ...otherdata } = user;
-    res.status(200).json(otherdata);
+    // [CWE-200/CWE-359] The previous line destructured a Mongoose *document*:
+    // `password` came from a prototype getter, but the rest element copied only
+    // the own enumerable keys ($__ and _doc) — so the bcrypt hash and the email
+    // still went out inside _doc. Project the fields in the query and return an
+    // explicit allowlist DTO instead.
+    const user = await User.findById(userId).select(
+      "name picture about followerscount followingcount createdAt"
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json(toPublicUser(user));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
