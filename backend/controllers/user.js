@@ -3,29 +3,42 @@ const User = require("../models/User");
 const Post = require("../models/Post");
 const bcrypt = require("bcrypt");
 const { generateToken } = require("../helper/token");
-const Code = require('../models/Code');
+// [CWE-613] Fix: rotating refresh tokens replace the previous 15-day access JWT.
+const {
+  issueRefreshToken,
+  setRefreshCookie,
+  // [CWE-613] Fix: used to end every session for a user after a password change.
+  revokeAllForUser,
+} = require("../helper/refreshToken");
+// [CWE-640] Fix: single-use, purpose-scoped tickets authorise a password change.
+const {
+  issueResetTicket,
+  verifyResetTicket,
+  consumeResetTicket,
+} = require("../helper/resetTicket");
+const Code = require("../models/Code");
 const { sendResetCode } = require("../helper/mail");
 const { sendReportMail } = require("../helper/reportmail");
 const generateCode = require("../helper/gen_code");
 const { loginSchema } = require("../validators/login.schema");
+const { validatePassword, BCRYPT_COST } = require("../helper/passwordPolicy");
+const Verify = require("../models/emailverify");
+const { sendVerifyCode } = require("../helper/mailverifymail");
+
 
 
 exports.sendreportmails = async (req, res) => {
   try {
-    const {
-      pid,
-      postid,
-      userid,
-      name1,
-      name2,
-      reason
-    } = req.body;
+    // [CWE-639] Fix: the reporter is the authenticated caller, not a body-supplied id, so a
+    // report can no longer be filed against someone else's account.
+    const { pid, postid, name1, name2, reason } = req.body;
+    const userid = req.user.id;
     const reporter = await User.findById(userid);
     const reported = await User.findById(postid);
-    var emailr = reporter.email
-    var emailrd = reported.email
-    var namer = reporter.name
-    var namerd = reported.name
+    var emailr = reporter.email;
+    var emailrd = reported.email;
+    var namer = reporter.name;
+    var namerd = reported.name;
     try {
       sendReportMail(emailr, emailrd, namer, namerd, reason, pid);
     } catch (error) {
@@ -34,9 +47,9 @@ exports.sendreportmails = async (req, res) => {
     return res.status(200).json({ msg: "ok" });
   } catch (error) {
     // console.log(error);
-    return res.status(400).json({ msg: "Bad Request" })
+    return res.status(400).json({ msg: "Bad Request" });
   }
-}
+};
 exports.register = async (req, res) => {
   try {
     const { name, temail, password } = req.body;
@@ -49,38 +62,63 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "Please enter a valid email !" });
     }
 
-    if (!validateLength(password, 6, 15)) {
-      return res
-        .status(400)
-        .json({ message: "Enter password between 6 to 15 characters !" });
+    const pwCheck = validatePassword(password, [name, temail]);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ message: pwCheck.message });
     }
 
     const check = await User.findOne({ email: temail });
     if (check) {
       return res.status(400).json({
-        message:
-          "This email already exists,try again with a different email",
+        message: "This email already exists,try again with a different email",
       });
     }
 
-    const hashed_password = await bcrypt.hash(password, 10);
+    const hashed_password = await bcrypt.hash(password, BCRYPT_COST);
     const user = await new User({
       name: name,
       email: temail,
       password: hashed_password,
-      verify: true,
+      verify: false,
       likeslist:{},
       bookmarkslist:{},
     }).save();
-    const token = generateToken({ id: user._id.toString() }, "15d");
+
+    // Issue a verification code and email it. Account stays unverified and
+    // NO token is returned until the user proves they own the email.
+    const code = generateCode(6);
+    const existing = await Verify.findOne({ mail: temail });
+    if (existing) {
+      existing.otp = code;
+      await existing.save();
+    } else {
+      await Verify.create({ mail: temail, otp: code });
+    }
+    try {
+      sendVerifyCode(temail, name, code);
+    } catch (mailErr) {
+      // Registration still succeeds; user can request a resend.
+    }
+
+    res.send({
+      id: user._id,
+      name: user.name,
+      verify: false,
+      message: "Register Success ! Please verify your email to continue.",
+    });
+    // [CWE-613] Fix: short-lived (15m default) access token plus a rotating refresh
+    // cookie, instead of a hardcoded 15-day JWT that could not be revoked.
+    const token = generateToken({ id: user._id.toString() });
+    const { rawToken } = await issueRefreshToken(user._id);
+    setRefreshCookie(res, rawToken);
     res.send({
       id: user._id,
       name: user.name,
       picture: user.picture,
       token: token,
       message: "Register Success !",
-      likes:[],
-      bookmarks:[],
+      likes: [],
+      bookmarks: [],
     });
   } catch (error) {
     // console.log(error);
@@ -89,10 +127,10 @@ exports.register = async (req, res) => {
 };
 exports.deletebookmark = async (req, res) => {
   try {
-    const {
-      postid,
-      userid
-    } = req.body;
+    // [CWE-639] Fix: the actor is taken from the verified JWT, not a body-supplied id, so a
+    // caller can no longer delete another user's bookmark by passing their id.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     if (!user) {
       return res.status(202).json({ msg: "Does not exist" });
@@ -101,8 +139,7 @@ exports.deletebookmark = async (req, res) => {
     var f = 0;
     if (m.length == 0) {
       return res.status(202).json({ msg: "Does not exists" });
-    }
-    else {
+    } else {
       for (var i = 0; i < m.length; i++) {
         if (m[i] == postid) {
           f = 1;
@@ -110,39 +147,34 @@ exports.deletebookmark = async (req, res) => {
         }
       }
       user.bookmarks = m;
-      if(user.bookmarkslist){
-        if(user.bookmarkslist.has(`${postid}`)){
-        user.bookmarkslist.delete(`${postid}`);
+      if (user.bookmarkslist) {
+        if (user.bookmarkslist.has(`${postid}`)) {
+          user.bookmarkslist.delete(`${postid}`);
         }
       }
       user.save();
       if (f == 1) {
         return res.status(202).json({ msg: "deleted" });
-      }
-      else {
+      } else {
         return res.status(202).json({ msg: "not found" });
       }
-
     }
-  }
-  catch (error) {
+  } catch (error) {
     // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
+    return res.status(401).json({ msg: "ERROR" });
   }
-}
+};
 exports.deletelikes = async (req, res) => {
   try {
-    const {
-      postid,
-      userid
-    } = req.body;
+    // [CWE-639] Fix: actor derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     var m = user.likes;
     var f = 0;
     if (m.length == 0) {
       return res.status(202).json({ msg: "Does not exists" });
-    }
-    else {
+    } else {
       for (var i = 0; i < m.length; i++) {
         if (m[i] == postid) {
           f = 1;
@@ -150,40 +182,36 @@ exports.deletelikes = async (req, res) => {
         }
       }
       user.likes = m;
-      if(user.likeslist){
-        if(user.likeslist.has(`${postid}`)){
-        user.likeslist.delete(`${postid}`);
+      if (user.likeslist) {
+        if (user.likeslist.has(`${postid}`)) {
+          user.likeslist.delete(`${postid}`);
         }
       }
       user.save();
       if (f == 1) {
         return res.status(202).json({ msg: "deleted" });
-      }
-      else {
+      } else {
         return res.status(202).json({ msg: "not found" });
       }
     }
     // user.bookmarks.push(postid);
-  }
-  catch (error) {
+  } catch (error) {
     // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
+    return res.status(401).json({ msg: "ERROR" });
   }
-}
+};
 exports.checklikes = async (req, res) => {
   try {
-    const {
-      postid,
-      userid
-    } = req.body;
+    // [CWE-639] Fix: actor derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     var m = user.likes;
     if (m.length == 0) {
       return res.status(202).json({ msg: "Does not exist" });
-    }
-    else {
-      if(user.likeslist){
-        if(user.likeslist.has(`${postid}`)){
+    } else {
+      if (user.likeslist) {
+        if (user.likeslist.has(`${postid}`)) {
           return res.status(202).json({ msg: "ok" });
         }
       }
@@ -195,57 +223,50 @@ exports.checklikes = async (req, res) => {
       return res.status(202).json({ msg: "Does not exists" });
     }
     // user.bookmarks.push(postid);
-  }
-  catch (error) {
-    // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
-  }
-}
-exports.getallLikes = async (req, res) => {
-  try {
-    const {
-      userid
-    } = req.body;
-    const user = await User.findOne({ _id: userid }).select("likes");
-    return res.status(201).json(user.likes);
-  }
-  catch (error) {
-    // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
-  }
-}
-exports.getallBookmarks = async (req, res) => {
-  try {
-    const {
-      userid
-    } = req.body;
-    const user = await User.findOne({ _id: userid }).select("bookmarks");
-    return res.status(201).json(user.bookmarks);
-  }
-  catch (error) {
+  } catch (error) {
     // console.log(error);
     return res.status(401).json({ msg: "ERROR" });
   }
-}
+};
+exports.getallLikes = async (req, res) => {
+  try {
+    // [CWE-639] Fix: previously returned any user's likes for an id taken from the body.
+    const userid = req.user.id;
+    const user = await User.findOne({ _id: userid }).select("likes");
+    return res.status(201).json(user.likes);
+  } catch (error) {
+    // console.log(error);
+    return res.status(401).json({ msg: "ERROR" });
+  }
+};
+exports.getallBookmarks = async (req, res) => {
+  try {
+    // [CWE-639] Fix: previously returned any user's bookmarks for an id from the body.
+    const userid = req.user.id;
+    const user = await User.findOne({ _id: userid }).select("bookmarks");
+    return res.status(201).json(user.bookmarks);
+  } catch (error) {
+    // console.log(error);
+    return res.status(401).json({ msg: "ERROR" });
+  }
+};
 exports.checkbookmark = async (req, res) => {
   try {
-    const {
-      postid,
-      userid
-    } = req.body;
+    // [CWE-639] Fix: actor derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     // console.log(user);
     var m = user.bookmarks;
     if (m.length == 0) {
       return res.status(202).json({ msg: "Does not exist" });
-    }
-    else {
-      if(user.bookmarkslist){
-        if(user.bookmarkslist.has(`${postid}`)){
+    } else {
+      if (user.bookmarkslist) {
+        if (user.bookmarkslist.has(`${postid}`)) {
           return res.status(202).json({ msg: "ok" });
         }
       }
-      for (var i = 0; i < m.length; i++) { 
+      for (var i = 0; i < m.length; i++) {
         if (m[i] == postid) {
           return res.status(202).json({ msg: "ok" });
         }
@@ -253,41 +274,39 @@ exports.checkbookmark = async (req, res) => {
       return res.status(202).json({ msg: "Does not exists" });
     }
     // user.bookmarks.push(postid);
-  }
-  catch (error) {
+  } catch (error) {
     // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
+    return res.status(401).json({ msg: "ERROR" });
   }
-}
+};
 exports.fetchprof = async (req, res) => {
   try {
-    const { id } = req.body
+    const { id } = req.body;
     const data = await User.findById(id);
     const resp = {
       name: data.name,
       picture: data.picture,
       about: data.about,
-      _id: id
-    }
-    return res.status(200).json({ msg: resp })
+      _id: id,
+    };
+    return res.status(200).json({ msg: resp });
   } catch (error) {
     // console.log(error)
-    return res.status(400).json({ msg: "error" })
+    return res.status(400).json({ msg: "error" });
   }
-}
+};
 exports.bookmark = async (req, res) => {
   try {
-    const {
-      postid,
-      userid
-    } = req.body;
+    // [CWE-639] Fix: the bookmark is written to the authenticated user's own account, so a
+    // caller can no longer add a bookmark on behalf of somebody else.
+    const { postid } = req.body;
+    const userid = req.user.id;
     const user = await User.findOne({ _id: userid });
     var m = user.bookmarks;
     var f = 0;
     if (m.length == 0) {
       m.push(postid);
-    }
-    else {
+    } else {
       for (var i = 0; i < m.length; i++) {
         if (m[i] == postid) {
           f = 1;
@@ -301,32 +320,31 @@ exports.bookmark = async (req, res) => {
       }
       user.bookmarks = m;
     }
-    user.bookmarkslist.set(`${postid}`,true);
-    user.save();
+    // [CWE-639] Fix: await the write. The save was fire-and-forget, so the response could be
+    // sent before the bookmark persisted and any failure escaped the catch block silently.
+    user.bookmarkslist.set(`${postid}`, true);
+    await user.save();
     if (f == 1) {
       return res.status(202).json({ msg: "exists" });
-    }
-    else {
+    } else {
       return res.status(202).json({ msg: "ok" });
     }
   } catch (error) {
     // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
+    return res.status(401).json({ msg: "ERROR" });
   }
-}
+};
 exports.likes = async (req, res) => {
   try {
-    const {
-      postid,
-      userid
-    } = req.body;
+    // [CWE-639] Fix: the like is recorded against the authenticated user, not a body id.
+    const { postid } = req.body;
+    const userid = req.user.id;
     var mt = await User.findOne({ _id: userid }).select("likes likeslist");
     var m = mt.likes;
     var f = 0;
     if (m.length == 0) {
       m.push(postid);
-    }
-    else {
+    } else {
       for (var i = 0; i < m.length; i++) {
         if (m[i] == postid) {
           f = 1;
@@ -339,25 +357,28 @@ exports.likes = async (req, res) => {
         m.push(postid);
       }
     }
+    // [CWE-639] Fix: await the write so the like is committed before we respond, and so a
+    // persistence failure is caught instead of becoming an unhandled rejection.
     mt.likes = m;
-    mt.likeslist.set(`${postid}`,true);
-    mt.save();
+    mt.likeslist.set(`${postid}`, true);
+    await mt.save();
     if (f == 1) {
       return res.status(202).json({ msg: "exists" });
-    }
-    else {
+    } else {
       return res.status(202).json({ msg: "ok" });
     }
   } catch (error) {
     // console.log(error);
-    return res.status(401).json({ msg: "ERROR" })
+    return res.status(401).json({ msg: "ERROR" });
   }
-}
+};
 exports.showbookmark = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: returns the authenticated caller's own bookmarks only. Named `id` to
+    // match the rest of the function, which declares `var userid` further down.
+    const id = req.user.id;
     const data = await User.findById(id).select("bookmarks bookmarkslist");
-    if(data.length==0){
+    if (data.length == 0) {
       return res.status(200).json({ msg: [] });
     }
     var arr = data.bookmarks;
@@ -369,7 +390,7 @@ exports.showbookmark = async (req, res) => {
     var name = "";
     var userid = "";
     var postid = "";
-    var darr = []
+    var darr = [];
     for (var i = 0; i < arr.length; i++) {
       var pd = await Post.findById(arr[i]);
       if (!pd) {
@@ -399,7 +420,7 @@ exports.showbookmark = async (req, res) => {
         createdAt: date,
         _id: _id,
         views: pd.views,
-      })
+      });
     }
     if (arr.length != darr.length) data.bookmarks = darr;
     await data.save();
@@ -409,12 +430,13 @@ exports.showbookmark = async (req, res) => {
     // console.log(error)
     return res.status(400).json({ msg: "error" });
   }
-}
+};
 exports.showLikemark = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: returns the authenticated caller's own liked posts only.
+    const id = req.user.id;
     const data = await User.findById(id).select("likes");
-    if(data.length==0){
+    if (data.length == 0) {
       return res.status(200).json({ msg: [] });
     }
     var arr = data.likes;
@@ -426,7 +448,7 @@ exports.showLikemark = async (req, res) => {
     var name = "";
     var userid = "";
     var postid = "";
-    var darr = []
+    var darr = [];
     for (var i = 0; i < arr.length; i++) {
       var pd = await Post.findById(arr[i]);
       if (!pd) {
@@ -456,7 +478,7 @@ exports.showLikemark = async (req, res) => {
         createdAt: date,
         _id: _id,
         views: pd.views,
-      })
+      });
     }
     if (arr.length != darr.length) data.bookmarks = darr;
     await data.save();
@@ -466,11 +488,12 @@ exports.showLikemark = async (req, res) => {
     // console.log(error)
     return res.status(400).json({ msg: "error" });
   }
-}
+};
 exports.showmyposts = async (req, res) => {
   try {
-    const { id } = req.body;
-    const data = await User.findById(id)
+    // [CWE-639] Fix: returns the authenticated caller's own posts only.
+    const id = req.user.id;
+    const data = await User.findById(id);
 
     var arr = data.posts;
     var respon = [];
@@ -482,7 +505,7 @@ exports.showmyposts = async (req, res) => {
     var userid = "";
     var _id = "";
     var view = "";
-    var likes="";
+    var likes = "";
     // console.log(99,arr.length);
     for (var i = 0; i < arr.length; i++) {
       var pd = await Post.findById(arr[i]);
@@ -501,7 +524,7 @@ exports.showmyposts = async (req, res) => {
       imgp = ud.picture;
       name = ud.name;
       _id = arr[i];
-      var likes= pd.likes?pd.likes:0;
+      var likes = pd.likes ? pd.likes : 0;
       const utcTimeString = pd.createdAt;
       const date = new Date(utcTimeString);
       respon.push({
@@ -519,19 +542,19 @@ exports.showmyposts = async (req, res) => {
         createdAt: date,
         powner: true,
         book: false,
-        likes:likes,
-      })
+        likes: likes,
+      });
     }
     data.save();
     return res.status(200).json({ msg: respon });
   } catch (error) {
     return res.status(400).json({ msg: "error" });
   }
-}
+};
 exports.showyourposts = async (req, res) => {
   try {
     const { id } = req.body;
-    const data = await User.findById(id)
+    const data = await User.findById(id);
     var arr = data.posts;
     var respon = [];
     var img = "";
@@ -548,18 +571,21 @@ exports.showyourposts = async (req, res) => {
         img: img,
         title: title,
         desc: desc,
-        postid: postid
-      })
+        postid: postid,
+      });
       res.status(200).json({ msg: respon });
     }
   } catch (error) {
     // console.log("error in postshow")
     return res.status(400).json({ msg: "error" });
   }
-}
+};
 exports.follow = async (req, res) => {
   try {
-    const { id, id2 } = req.body;
+    // [CWE-639] Fix: the actor (id) comes from the verified JWT and only the target (id2) is
+    // taken from the body, so nobody can make another user follow someone on their behalf.
+    const { id2 } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     const user2 = await User.findById(id2);
 
@@ -571,8 +597,7 @@ exports.follow = async (req, res) => {
     var m = user.following;
     if (m.length == 0) {
       user.following.push(id2);
-    }
-    else {
+    } else {
       for (var i = 0; i < m.length; i++) {
         if (m[i] == id2) {
           f = 1;
@@ -593,7 +618,7 @@ exports.follow = async (req, res) => {
     // console.log("error in follow");
     return res.status(400).json({ msg: "error in follow" });
   }
-}
+};
 exports.followercount = async (req, res) => {
   try {
     const { id } = req.body;
@@ -604,7 +629,7 @@ exports.followercount = async (req, res) => {
     // console.log("error in followcount");
     return res.status(400).json({ msg: "error in followcount" });
   }
-}
+};
 exports.followingcount = async (req, res) => {
   try {
     const { id } = req.body;
@@ -615,17 +640,18 @@ exports.followingcount = async (req, res) => {
     // console.log("error in followingcount");
     return res.status(400).json({ msg: "error in followingcount" });
   }
-}
+};
 exports.unfollow = async (req, res) => {
   try {
-    const { id, id2 } = req.body;
+    // [CWE-639] Fix: actor (id) from the verified JWT; only the target (id2) from the body.
+    const { id2 } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     const user2 = await User.findById(id2);
-    var mm = user2.followerscount
+    var mm = user2.followerscount;
     if (mm - 1 < 0) {
       mm = 0;
-    }
-    else {
+    } else {
       mm = mm - 1;
     }
     user2.followerscount = mm;
@@ -635,8 +661,7 @@ exports.unfollow = async (req, res) => {
     if (m.length == 0) {
       return res.status(200).json({ msg: "ok" });
       // user.following.push(id2);
-    }
-    else {
+    } else {
       for (var i = 0; i < m.length; i++) {
         if (m[i] == id2) {
           f = 1;
@@ -657,10 +682,11 @@ exports.unfollow = async (req, res) => {
     // console.log("error in unfollow");
     res.status(400).json({ msg: "error in unfollow" });
   }
-}
+};
 exports.fetchfollowing = async (req, res) => {
   try {
-    const { id } = req.body;
+    // [CWE-639] Fix: previously returned any user's following list for a body-supplied id.
+    const id = req.user.id;
     const user = await User.findById(id);
     const arr = user.following;
     const resp = [];
@@ -675,31 +701,36 @@ exports.fetchfollowing = async (req, res) => {
       resp.push({
         name: name,
         pic: pic,
-        pid: pid
-      })
+        pid: pid,
+      });
     }
     return res.status(200).json({ msg: resp });
   } catch (error) {
     // console.log("error in fetchfollow");
     return res.status(400).json({ msg: "error in fetchfollow" });
   }
-}
+};
 exports.changeabout = async (req, res) => {
   try {
-    const { about, id } = req.body;
+    // [CWE-639] Fix: only the authenticated user can edit their own "about"; the previous
+    // version wrote to whichever id the caller put in the body.
+    const { about } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
-    user.about = about;;
+    user.about = about;
     user.save();
     return res.status(200).json({ msg: "Saved successfully" });
   } catch (error) {
     // console.log("error in fetchfollow");
     return res.status(400).json({ msg: "error in fetchfollow" });
   }
-}
+};
 exports.searchresult = async (req, res) => {
   try {
     const { id2 } = req.body;
-    const data = await User.find({ "name": { $regex: '^' + `${id2}`, $options: 'i' } });
+    const data = await User.find({
+      name: { $regex: "^" + `${id2}`, $options: "i" },
+    });
     if (data.length === 0) {
       return res.status(200).json({ msg: [] });
     }
@@ -711,19 +742,21 @@ exports.searchresult = async (req, res) => {
       names.push({
         name: name,
         id: id,
-        pic: pic
-      })
+        pic: pic,
+      });
     }
     return res.status(200).json({ msg: names });
   } catch (error) {
     // console.log("error in search");
     return res.status(400).json({ msg: "error in search" });
   }
-}
+};
 
 exports.checkfollowing = async (req, res) => {
   try {
-    const { id, id2 } = req.body;
+    // [CWE-639] Fix: actor (id) from the verified JWT; only the target (id2) from the body.
+    const { id2 } = req.body;
+    const id = req.user.id;
     const user = await User.findById(id);
     const arr = user.following;
     if (arr.length == 0) {
@@ -739,13 +772,28 @@ exports.checkfollowing = async (req, res) => {
     // console.log("error in fetchcehckfollow");
     return res.status(400).json({ msg: "error in fetchcheckfollow" });
   }
-}
+};
 
 exports.deletepost = async (req, res) => {
   try {
-    const { postid, userid } = req.body;
+    // [CWE-639] Fix: owner is derived from the verified JWT, not the request body.
+    const { postid } = req.body;
+    const userid = req.user.id;
+
+    // [CWE-639] Fix: ownership must be enforced on the POST itself, not only on the caller's
+    // posts array. The previous version ran Post.deleteOne({ _id: postid }) with no owner
+    // check at all, so any authenticated user could destroy anybody's post just by knowing
+    // its id. Compare the post's owner against the token subject and reject otherwise.
+    const post = await Post.findById(postid);
+    if (!post) {
+      return res.status(404).json({ mgs: "Post not found" });
+    }
+    if (post.user.toString() !== userid) {
+      return res.status(403).json({ mgs: "Not allowed" });
+    }
+
     await Post.deleteOne({ _id: postid });
-    var datas = await User.findById(userid)
+    var datas = await User.findById(userid);
     arr = datas.posts;
     for (var i = 0; i < arr.length; i++) {
       if (arr[i] == postid) {
@@ -754,13 +802,14 @@ exports.deletepost = async (req, res) => {
       }
     }
     datas.posts = arr;
-    datas.save();
+    // [CWE-639] Fix: await the write; the unawaited save could fail after the 200 was sent.
+    await datas.save();
     return res.status(200).json({ mgs: "ok" });
   } catch (error) {
     // console.log("error in deleting post");
     return res.status(400).json({ mgs: "Error" });
   }
-}
+};
 exports.login = async (req, res) => {
   try {
     const parsed = loginSchema.safeParse(req.body);
@@ -771,8 +820,7 @@ exports.login = async (req, res) => {
     const user = await User.findOne({ email: temail });
     if (!user) {
       return res.status(400).json({
-        message:
-          "the email you entered is not registered.",
+        message: "the email you entered is not registered.",
       });
     }
     if (user.googleId) {
@@ -787,7 +835,25 @@ exports.login = async (req, res) => {
         message: "Invalid Credentials. Please Try Again.",
       });
     }
-    const token = generateToken({ id: user._id.toString() }, "15d");
+    if (user.verify === false) {
+      return res.status(403).json({
+        message: "Email not verified. Please verify your email to log in.",
+        needVerify: true,
+        email: user.email,
+      });
+    }
+
+    // [CWE-613] Fix: short-lived (15m default) access token plus a rotating refresh
+    // cookie, instead of a hardcoded 15-day JWT that could not be revoked.
+    // [CWE-384] Note: no session regeneration is performed on this path, deliberately.
+    // This login is stateless — identity travels in the signed JWT and never in req.session
+    // — and with `saveUninitialized: false` no session identifier is issued before
+    // authentication, so there is no pre-auth session id for an attacker to fixate.
+    // Regeneration is applied where the session genuinely carries identity instead:
+    // controllers/Auth.js's google_auth_callback.
+    const token = generateToken({ id: user._id.toString() });
+    const { rawToken } = await issueRefreshToken(user._id);
+    setRefreshCookie(res, rawToken);
     res.send({
       id: user._id,
       name: user.name,
@@ -818,7 +884,7 @@ exports.getUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const user = await User.findById(userId);
-    const { password, ...otherdata } = user
+    const { password, ...otherdata } = user;
     res.status(200).json(otherdata);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -827,13 +893,15 @@ exports.getUser = async (req, res) => {
 exports.findOutUser = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email: email })
+    const user = await User.findOne({ email: email });
     if (user) {
       if (!user.googleId) {
         res.status(200).json(user);
-      }
-      else {
-        return res.status(400).json({ message: "You have account associated with google, trying signing up again using google" });
+      } else {
+        return res.status(400).json({
+          message:
+            "You have account associated with google, trying signing up again using google",
+        });
       }
     } else {
       res.status(404).json({ message: "no such user exists" });
@@ -843,55 +911,113 @@ exports.findOutUser = async (req, res) => {
   }
 };
 exports.sendResetPasswordCode = async (req, res) => {
+  // [CWE-640] Fix: the response is now identical whether or not the address is registered,
+  // so this endpoint can no longer be used to enumerate accounts. Previously an unknown
+  // email dereferenced null (user._id) and returned 500 while a known email returned 200 —
+  // a trivially observable oracle.
+  const uniformResponse = {
+    message: "If that email address is registered, a reset code has been sent.",
+  };
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
-    await Code.findOneAndRemove({ user: user._id });
-    const code = generateCode(5);
-    const savedCode = await new Code({
-      code,
-      user: user._id,
-    }).save();
-    sendResetCode(user.email, user.name, code);
-    return res.status(200).json({
-      message: "Email reset code has been sent to your email",
-    });
+    if (user) {
+      // Mongoose 8 removed findOneAndRemove(); the original code called it here, so this
+      // endpoint threw a TypeError and 500'd for EVERY email — password reset never worked.
+      await Code.findOneAndDelete({ user: user._id });
+      const code = generateCode(5);
+      await new Code({
+        code,
+        user: user._id,
+      }).save();
+      sendResetCode(user.email, user.name, code);
+    }
+    return res.status(200).json(uniformResponse);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    // Deliberately generic: the failure mode must not correlate with whether the lookup hit.
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 exports.validateResetCode = async (req, res) => {
   try {
     const { email, code } = req.body;
     const user = await User.findOne({ email });
-    const Dbcode = await Code.findOne({ user: user._id });
-    if (Dbcode.code !== code) {
-      return res.status(400).json({
-        message: "Verification code is wrong!",
-      });
+
+    // [CWE-640] Fix: one generic failure covers both "no such user" and "wrong code", so
+    // this endpoint cannot be used to probe which addresses are registered. It also avoids
+    // the TypeError (and 500) the previous version threw when `user` was null.
+    const invalid = { message: "Invalid or expired reset code" };
+    if (!user) {
+      return res.status(400).json(invalid);
     }
-    return res.status(200).json({ message: "ok" });
+
+    const Dbcode = await Code.findOne({ user: user._id });
+    if (!Dbcode || String(Dbcode.code) !== String(code)) {
+      return res.status(400).json(invalid);
+    }
+
+    // [CWE-640] Fix: hand back a short-lived ticket instead of a bare `ok`. Previously the
+    // client received no credential at all, which is why changePassword had to accept
+    // whatever email the caller supplied. The target user is now bound into the ticket.
+    const resetTicket = await issueResetTicket(user._id);
+
+    // Make the emailed code single-use too, so it cannot mint a second ticket.
+    await Code.findOneAndDelete({ user: user._id });
+
+    return res.status(200).json({ message: "ok", resetTicket });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 exports.changePassword = async (req, res) => {
-  const { email, password } = req.body;
+  // [CWE-620] Fix: this endpoint no longer accepts an `email` at all. The previous contract
+  // was `{ email, password }` with no authentication, no code check and no ticket, so any
+  // anonymous caller could overwrite any account's password simply by naming it. The target
+  // user now comes from the verified `userId` claim inside the reset ticket, and nothing in
+  // the request body can influence whose password is changed.
+  const { resetTicket, newPassword } = req.body;
+  const rejected = { message: "Invalid or expired reset ticket" };
   try {
-    const cryptedPassword = await bcrypt.hash(password, 12);
-    await User.findOneAndUpdate(
-      { email },
-      {
-        password: cryptedPassword,
-      }
-    );
-    return res.status(200).json({ message: "ok" });
+    const verified = await verifyResetTicket(resetTicket);
+    if (!verified.ok) {
+      return res.status(401).json(rejected);
+    }
 
+    const user = await User.findById(verified.userId).select("email name");
+    if (!user) {
+      return res.status(401).json(rejected);
+    }
+
+    // V15 password policy preserved. This runs BEFORE the ticket is consumed, so a password
+    // that fails the policy can be retried with the same ticket instead of restarting the
+    // whole flow. Name and email are passed in so zxcvbn penalises passwords derived from
+    // the user's own identity, as V15 intended.
+    const pwCheck = validatePassword(newPassword, [user.email, user.name]);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ message: pwCheck.message });
+    }
+
+    // [CWE-640] Fix: single-use enforcement, consumed atomically before the write so a
+    // replayed ticket can never reach the password update.
+    const consumed = await consumeResetTicket(resetTicket);
+    if (!consumed.ok) {
+      return res.status(401).json(rejected);
+    }
+
+    const cryptedPassword = await bcrypt.hash(newPassword, BCRYPT_COST);
+    await User.findByIdAndUpdate(consumed.userId, {
+      password: cryptedPassword,
+    });
+
+    // [CWE-613] Fix: end every existing session for this account. This was the item the V12
+    // task deferred to V1, and it matters most here — a password reset is exactly when a
+    // stolen refresh token must stop working.
+    await revokeAllForUser(consumed.userId);
+
+    return res.status(200).json({ message: "ok" });
   } catch (error) {
-    res.status(400).json({ message: "AN ERROR OCCURRED, PLEASE TRY AGAIN LATER" })
+    res
+      .status(400)
+      .json({ message: "AN ERROR OCCURRED, PLEASE TRY AGAIN LATER" });
   }
 };
-
-
-
-

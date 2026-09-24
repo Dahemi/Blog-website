@@ -16,6 +16,7 @@ import Intogoogle from "./components/Auth/intogoogle";
 import Not_found from "./pages/not_found";
 import Editpost from "./pages/write/Editpost";
 import TopicPage from "./pages/TopicPage";
+import OAuthCallback from "./pages/OAuthCallback";
 function App() {
   const { user } = useSelector((state) => ({ ...state }));
 
@@ -30,6 +31,7 @@ function App() {
         <Route path="/article/:postID" element={<ArticlePage />} />
         <Route path="/ProfileRedirect/:userID" element={<ProfileOfOtherUser />} />
         <Route path="/resetPassword" element={<ResetPassword />} />
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/404" element={<Not_found />} />
         <Route element={<LoggedInRoutes />}>
           <Route path="/write" element={<WritePost />} />

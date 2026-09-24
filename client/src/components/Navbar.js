@@ -45,32 +45,6 @@ function Navbar({ postpage }) {
     }
   }
   const { user } = useSelector((state) => ({ ...state }));
-  const handleLoad = () => {
-    if (user === null || user === undefined) {
-      fetch(`${process.env.REACT_APP_BACKEND_URL}/login/success`, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Credentials": true,
-        },
-      })
-        .then((response) => {
-          if (response.status === 200) return response.json();
-          throw new Error("Authentication Failed!");
-        })
-        .then((resObject) => {
-          dispatch({ type: "LOGIN", payload: resObject.user });
-          Cookies.set("user", JSON.stringify(resObject.user), {
-            expires: 15,
-          });
-        })
-        .catch((err) => {
-          // console.log(err);
-        });
-    }
-  };
 
   const logoutFunction = async (e) => {
     e.preventDefault();
