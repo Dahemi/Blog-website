@@ -20,7 +20,12 @@ const Code = require("../models/Code");
 const { sendResetCode } = require("../helper/mail");
 const { sendReportMail } = require("../helper/reportmail");
 const generateCode = require("../helper/gen_code");
+const { loginSchema } = require("../validators/login.schema");
 const { validatePassword, BCRYPT_COST } = require("../helper/passwordPolicy");
+const Verify = require("../models/emailverify");
+const { sendVerifyCode } = require("../helper/mailverifymail");
+
+
 
 exports.sendreportmails = async (req, res) => {
   try {
@@ -74,10 +79,33 @@ exports.register = async (req, res) => {
       name: name,
       email: temail,
       password: hashed_password,
-      verify: true,
-      likeslist: {},
-      bookmarkslist: {},
+      verify: false,
+      likeslist:{},
+      bookmarkslist:{},
     }).save();
+
+    // Issue a verification code and email it. Account stays unverified and
+    // NO token is returned until the user proves they own the email.
+    const code = generateCode(6);
+    const existing = await Verify.findOne({ mail: temail });
+    if (existing) {
+      existing.otp = code;
+      await existing.save();
+    } else {
+      await Verify.create({ mail: temail, otp: code });
+    }
+    try {
+      sendVerifyCode(temail, name, code);
+    } catch (mailErr) {
+      // Registration still succeeds; user can request a resend.
+    }
+
+    res.send({
+      id: user._id,
+      name: user.name,
+      verify: false,
+      message: "Register Success ! Please verify your email to continue.",
+    });
     // [CWE-613] Fix: short-lived (15m default) access token plus a rotating refresh
     // cookie, instead of a hardcoded 15-day JWT that could not be revoked.
     const token = generateToken({ id: user._id.toString() });
@@ -784,7 +812,11 @@ exports.deletepost = async (req, res) => {
 };
 exports.login = async (req, res) => {
   try {
-    const { temail, password } = req.body;
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid input." });
+    }
+    const { temail, password } = parsed.data;
     const user = await User.findOne({ email: temail });
     if (!user) {
       return res.status(400).json({
@@ -803,6 +835,14 @@ exports.login = async (req, res) => {
         message: "Invalid Credentials. Please Try Again.",
       });
     }
+    if (user.verify === false) {
+      return res.status(403).json({
+        message: "Email not verified. Please verify your email to log in.",
+        needVerify: true,
+        email: user.email,
+      });
+    }
+
     // [CWE-613] Fix: short-lived (15m default) access token plus a rotating refresh
     // cookie, instead of a hardcoded 15-day JWT that could not be revoked.
     // [CWE-384] Note: no session regeneration is performed on this path, deliberately.
