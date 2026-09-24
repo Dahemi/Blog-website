@@ -1,8 +1,19 @@
 const cloudinary = require("cloudinary");
 const fs = require("fs");
-const FileType = require("file-type");
 const { randomUUID } = require("crypto");
 const keys = require("../config/keys");
+
+// [V8] file-type >=21 (the version that fixes GHSA-5v7r-6r5c-r473) is a pure ESM
+// package — it dropped CommonJS support entirely, so it can't be require()'d from
+// this file. Loaded via a cached dynamic import instead; every call after the first
+// reuses the same resolved function rather than re-importing per upload.
+let fileTypeFromFilePromise;
+const getFileTypeFromFile = () => {
+  if (!fileTypeFromFilePromise) {
+    fileTypeFromFilePromise = import("file-type").then((mod) => mod.fileTypeFromFile);
+  }
+  return fileTypeFromFilePromise;
+};
 
 cloudinary.config({
   cloud_name: keys.CLOUD_NAME,
@@ -44,7 +55,8 @@ exports.uploadImages = async (req, res) => {
     // 3. Magic bytes — the authoritative check. file.mimetype is attacker-chosen
     //    metadata; the first bytes on disk are the actual content. This is what
     //    Evidence 1 in the report proves: a renamed .exe fails right here.
-    const detected = await FileType.fromFile(file.tempFilePath);
+    const fileTypeFromFile = await getFileTypeFromFile();
+    const detected = await fileTypeFromFile(file.tempFilePath);
     if (!detected || !ALLOWED_MIME.has(detected.mime)) {
       return res.status(415).json({
         message: "File content is not a supported image.",
