@@ -41,7 +41,7 @@ function ProfileOfOtherUser() {
       // };
     }
     const data = await getUser(userID);
-    setOtherUser(data._doc);
+    setOtherUser(data);
     const sfcr = await checkfollowing(user.id, userID);
     if(sfcr){
     if (sfcr.msg === "ok") {
