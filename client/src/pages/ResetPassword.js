@@ -32,6 +32,10 @@ function ResetPassword() {
 
       setFoundUser(data);
     } catch (error) {
+      if (!error.response) {
+        alert("Cannot reach the server. Please try again later.");
+        return;
+      }
       if (error.response.status === 400) {
         alert(error.response.data.message);
         return;

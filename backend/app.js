@@ -5,6 +5,7 @@ const session = require("express-session");
 // const session = require('cookie-session');
 const cors = require("cors");
 const fileUpload = require("express-fileupload");
+const mongoSanitize = require("express-mongo-sanitize");
 const userRoutes = require("./routes/user.js");
 const uploadRoutes = require("./routes/upload.js");
 const postRoutes = require("./routes/post.js");
@@ -81,6 +82,10 @@ app.use(
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
+// Strip MongoDB operator keys ($ne, $gt, ...) and dotted keys from
+// req.body/params/query to prevent NoSQL operator injection (CWE-943).
+app.use(mongoSanitize());
 
 app.set("trust proxy", 1);
 
