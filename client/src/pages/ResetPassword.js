@@ -26,7 +26,7 @@ function ResetPassword() {
         }
       );
       
-      setFoundUser(data[0])
+      setFoundUser(data)
 
 
     } catch (error) {

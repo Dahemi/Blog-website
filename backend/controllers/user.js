@@ -841,7 +841,7 @@ exports.sendResetPasswordCode = async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
-    await Code.findOneAndRemove({ user: user._id });
+    await Code.findOneAndDelete({ user: user._id });
     const code = generateCode(5);
     const savedCode = await new Code({
       code,
@@ -859,31 +859,67 @@ exports.validateResetCode = async (req, res) => {
   try {
     const { email, code } = req.body;
     const user = await User.findOne({ email });
-    const Dbcode = await Code.findOne({ user: user._id });
-    if (Dbcode.code !== code) {
-      return res.status(400).json({
-        message: "Verification code is wrong!",
-      });
+    if (!user) {
+      return res.status(400).json({ message: "Verification code is wrong!" });
     }
+
+    const Dbcode = await Code.findOne({ user: user._id });
+    if (!Dbcode) {
+      return res.status(400).json({ message: "No reset code found. Please request a new one." });
+    }
+
+    // Explicit expiry check (don't rely only on Mongo TTL)
+    const THIRTY_MIN = 30 * 60 * 1000;
+    if (Date.now() - new Date(Dbcode.createdAt).getTime() > THIRTY_MIN) {
+      await Code.findByIdAndDelete(Dbcode._id);
+      return res.status(400).json({ message: "Code has expired. Please request a new one." });
+    }
+
+    // Lock after 5 wrong attempts
+    if (Dbcode.attempts >= 5) {
+      await Code.findByIdAndDelete(Dbcode._id);
+      return res.status(429).json({ message: "Too many attempts. Please request a new code." });
+    }
+
+    if (Dbcode.code !== code) {
+      Dbcode.attempts += 1;
+      await Dbcode.save();
+      return res.status(400).json({ message: "Verification code is wrong!" });
+    }
+
+    // Correct code: mark verified so changePassword can trust it
+    Dbcode.verified = true;
+    await Dbcode.save();
+
     return res.status(200).json({ message: "ok" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 exports.changePassword = async (req, res) => {
   const { email, password } = req.body;
   try {
-    const cryptedPassword = await bcrypt.hash(password, 12);
-    await User.findOneAndUpdate(
-      { email },
-      {
-        password: cryptedPassword,
-      }
-    );
-    return res.status(200).json({ message: "ok" });
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "AN ERROR OCCURRED, PLEASE TRY AGAIN LATER" });
+    }
 
+    // Require a validated reset code — reject if none or not verified
+    const Dbcode = await Code.findOne({ user: user._id });
+    if (!Dbcode || !Dbcode.verified) {
+      return res.status(400).json({ message: "Reset code not verified. Please verify your code first." });
+    }
+
+    const cryptedPassword = await bcrypt.hash(password, 12);
+    await User.findOneAndUpdate({ email }, { password: cryptedPassword });
+
+    // One-time use: delete the code after the password is changed
+    await Code.findByIdAndDelete(Dbcode._id);
+
+    return res.status(200).json({ message: "ok" });
   } catch (error) {
-    res.status(400).json({ message: "AN ERROR OCCURRED, PLEASE TRY AGAIN LATER" })
+    res.status(400).json({ message: "AN ERROR OCCURRED, PLEASE TRY AGAIN LATER" });
   }
 };
 
