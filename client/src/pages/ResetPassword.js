@@ -30,7 +30,7 @@ function ResetPassword() {
         },
       );
 
-      setFoundUser(data[0]);
+      setFoundUser(data);
     } catch (error) {
       if (error.response.status === 400) {
         alert(error.response.data.message);
