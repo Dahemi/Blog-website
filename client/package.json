@@ -31,7 +31,8 @@
     "react-web-share": "^2.0.2",
     "reactjs-popup": "^2.0.6",
     "redux": "^5.0.1",
-    "web-vitals": "^3.5.1"
+    "web-vitals": "^3.5.1",
+    "zxcvbn": "^4.4.2"
   },
   "scripts": {
     "start": "react-scripts start",

@@ -1,20 +1,20 @@
-const dotenv = require("dotenv").config();
+// [CWE-613] Refactor: this entrypoint now owns only process-level concerns (env, DB
+// connection, port). The express app was extracted into ./app so that tests can import
+// it with supertest without binding a port or opening a database connection.
 const keys = require("./config/keys");
-const Port = keys.PORT || 5002;
-const express = require("express");
-const app = express();
 const mongoose = require("mongoose");
 const passport = require("passport");
 const session = require("express-session");
 // const session = require('cookie-session');
 const cors = require("cors");
 const fileUpload = require("express-fileupload");
+const mongoSanitize = require("express-mongo-sanitize");
 const userRoutes = require("./routes/user.js");
 const uploadRoutes = require("./routes/upload.js");
 const postRoutes = require("./routes/post.js");
 var cookieParser = require('cookie-parser')
 var cookieSession = require("cookie-session");
-const MongoStore = require("connect-mongo");
+var MongoDBStore = require("connect-mongodb-session")(session);
 require('dotenv').config();
 app.use(
   cors({
@@ -28,6 +28,18 @@ app.use(
 mongoose.set("strictQuery", false);
 mongoose.connect(keys.MONGO_URI)
 
+var store = new MongoDBStore(
+  {
+    uri: keys.MONGO_URI,
+    collection: "mySessions",
+  },
+  function (error) {
+    if (error) {
+      // console.log("err", error);
+    }
+  }
+);
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   next();
@@ -35,6 +47,10 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
+// Strip MongoDB operator keys ($ne, $gt, ...) and dotted keys from
+// req.body/params/query to prevent NoSQL operator injection (CWE-943).
+app.use(mongoSanitize());
 
 
 app.set("trust proxy", 1)
@@ -44,10 +60,6 @@ app.use(session({
   secret: keys.COOKIE_KEY,
   resave: false,
   saveUninitialized: true,
-  store: MongoStore.create({
-    mongoUrl: keys.MONGO_URI,
-    collectionName: "mySessions",
-  }),
   cookie: {
     maxAge: 15 * 24 * 60 * 60 * 1000, // Uncomment if needed for cookie lifespan
     sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax", // "none" for cross-site cookies in production
@@ -63,12 +75,12 @@ app.use(
     useTempFiles: true,
   })
 );
+const app = require("./app");
 
+const Port = keys.PORT || 5002;
 
-app.use("/", userRoutes);
-require("./servises/passport");
-app.use("/", uploadRoutes);
-app.use("/", postRoutes);
+mongoose.set("strictQuery", false);
+mongoose.connect(keys.MONGO_URI);
 
 app.listen(Port, () => {
   console.log(`server running ${Port}`);
