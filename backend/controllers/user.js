@@ -925,7 +925,7 @@ exports.sendResetPasswordCode = async (req, res) => {
       // Mongoose 8 removed findOneAndRemove(); the original code called it here, so this
       // endpoint threw a TypeError and 500'd for EVERY email — password reset never worked.
       await Code.findOneAndDelete({ user: user._id });
-      const code = generateCode(5);
+      const code = generateCode(6);
       await new Code({
         code,
         user: user._id,
