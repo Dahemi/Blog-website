@@ -34,7 +34,7 @@ passport.use(new GoogleStrategy({
           return done(null, existingUser)
         } else {
           var url = profile.photos[0].value;
-          new User({ googleId: profile.id, email: profile.emails[0].value, picture: url, name: profile.displayName, likeslist: {}, bookmarkslist: {} }).save().then((user) => {
+          new User({ googleId: profile.id, email: profile.emails[0].value, picture: url, name: profile.displayName,verify: true, likeslist: {}, bookmarkslist: {} }).save().then((user) => {
             return done(null, user)
             // done(null, user)
           });

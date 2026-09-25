@@ -11,6 +11,7 @@ import {
   sendmail,
   checkotpv
 } from "../helpers/index"
+import PasswordStrength from "../components/PasswordStrength";
 
 function Auth() {
   const dispatch = useDispatch();
@@ -212,7 +213,6 @@ function Auth() {
             </div> */}
             <div className="social google">
               <img src="/google.jpg" alt="google" />
-              {/* <GoogleOAuthProvider clientId={`${process.env.GOOGLE_CLIENT}`}>...</GoogleOAuthProvider>; */}
               <span onClick={() => signUpWithGoogle()}>Sign In with Google</span>
             </div>
           </div>
@@ -220,7 +220,6 @@ function Auth() {
           <div>
             <div className="social google">
               <img src="/google.jpg" alt="google" />
-              {/* <GoogleOAuthProvider clientId={`${process.env.GOOGLE_CLIENT}`}>...</GoogleOAuthProvider>; */}
               <span onClick={() => signUpWithGoogle()}>Sign Up with Google</span>
             </div>
           </div>
@@ -263,6 +262,11 @@ function Auth() {
               onChange={handleRegisterChange}
             />
           </div>
+          {state === "Sign Up" ? (
+            <PasswordStrength password={password} userInputs={[name, email]} />
+          ) : (
+            ""
+          )}
           {(cs) && state === "Sign Up" ?
             <div className="input">
               <input

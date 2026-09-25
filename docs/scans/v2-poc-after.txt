@@ -1,0 +1,31 @@
+AFTER
+
+$ curl -s -w "\n[status %{http_code}]\n" -X POST
+  -H "Content-Type: application/json" \
+  -d '{"temail":"serendipity.author@example.com",
+{"id":"6ab33ca575a8012805ffd4a8","name":"Olawale nhtng/image/upload/v1643044376/avatars/default_piIkpXVCJ9.eyJpZCI6IjZhYjMzY2E1NzVhODAxMjgwNWZmZDRhmG_O70xhFLRtUnr7SsaWRFnv-zwFKXw59Yz09xrmK6Y","boo
+[status 200]
+
+
+
+$ curl -s -w "\n[status %{http_code}]\n" -X POST
+  -H "Content-Type: application/json" \
+  -d '{"temail":"serendipity.author@example.com",
+{"message":"Invalid Credentials. Please Try Again
+[status 400]
+
+
+
+$ curl -s -w "\n[status %{http_code}]\n" -X POST
+  -H "Content-Type: application/json" \
+  -d '{"temail":{"$ne":null},"password":"WRONG"}'
+{"message":"Invalid input."}
+[status 400]
+
+
+
+$ curl -s -w "\n[status %{http_code}]\n" -X POST
+  -H "Content-Type: application/json" \
+  -d '{"temail":12345,"password":"WRONG"}'
+{"message":"Invalid input."}
+[status 400]

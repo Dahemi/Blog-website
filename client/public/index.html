@@ -3,6 +3,19 @@
 
 <head>
   <meta charset="utf-8" />
+  <!-- V10: a CSP served by the backend's JSON responses does not apply to this
+       document, since React is served from a different origin. This meta tag is
+       the half that actually protects what users see; it cannot express
+       frame-ancestors or report-uri, so it is not a complete replacement for
+       response headers from whatever host serves the production build. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self';
+                 style-src 'self' 'unsafe-inline';
+                 img-src 'self' data: https://res.cloudinary.com https://lh3.googleusercontent.com;
+                 connect-src 'self' http://localhost:5002;
+                 object-src 'none';
+                 base-uri 'self'">
   <link rel="icon" href="OIG.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#000000" />
