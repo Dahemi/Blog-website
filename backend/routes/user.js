@@ -14,7 +14,6 @@ const {
   getallBookmarks,
   uploadprofile,
   getUser,
-  findOutUser,
   sendResetPasswordCode,
   validateResetCode,
   changePassword,
@@ -86,7 +85,9 @@ router.post("/sendmail", sendmail);
 router.post("/verifycode", verifycode);
 router.put("/uploadprofile", authUser, uploadprofile);
 router.get("/getUser/:userId", getUser);
-router.post("/findOutUser", findOutUser);
+// [CWE-204] /findOutUser removed — it existed only to confirm whether an email address
+// had an account. The reset flow now posts straight to /sendResetPasswordCode, which
+// responds identically for registered and unregistered addresses.
 // [CWE-639] Fix: was readable for any userid in the body.
 router.post("/getallBookmarks", authUser, getallBookmarks);
 router.post("/sendResetPasswordCode", sendResetPasswordCode);
