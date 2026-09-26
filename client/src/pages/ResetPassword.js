@@ -8,7 +8,6 @@ function ResetPassword() {
   const [email, setEmail] = useState("");
   const [code, setcode] = useState("");
   const [pass, setpass] = useState("");
-  const [foundUser, setFoundUser] = useState(null);
   const [foundsend, setFoundsend] = useState(null);
   const [open, setopen] = useState(null);
   // [CWE-640] Fix: holds the short-lived reset ticket returned by /validateResetCode. It is
@@ -21,37 +20,27 @@ function ResetPassword() {
     setEmail(event.target.value);
   };
 
-  const handleSearchClick = async () => {
-    try {
-      const { data } = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL}/findOutUser`,
-        {
-          email,
-        },
-      );
-
-      setFoundUser(data);
-    } catch (error) {
-      if (error.response.status === 400) {
-        alert(error.response.data.message);
-        return;
-      }
-      if (error.response.status === 404) {
-        alert(error.response.data.message);
-        return;
-      }
-    }
-  };
+  // [CWE-204] Fix: this used to call /findOutUser first and then render the matched
+  // account's name, email address and profile picture on screen — so typing any address
+  // revealed whether it was registered, and who it belonged to. The lookup step is gone.
+  // The typed email goes straight to /sendResetPasswordCode, which answers identically for
+  // registered and unregistered addresses, and the UI always advances to the code form with
+  // the same message. An attacker learns nothing from either the response or the screen.
   const sendCode = async () => {
-    try {
-      const { data } = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL}/sendResetPasswordCode`,
-        { email: foundUser.email, code: code },
-      );
-      setFoundsend(true);
-    } catch (error) {
-      // console.log(error.message);
+    if (!email) {
+      return;
     }
+    try {
+      await axios.post(
+        `${process.env.REACT_APP_BACKEND_URL}/sendResetPasswordCode`,
+        { email },
+      );
+    } catch (error) {
+      // Deliberately swallowed: surfacing a transport-level failure here would
+      // re-introduce an observable difference between addresses.
+    }
+    // Always advance, whatever happened above.
+    setFoundsend(true);
   };
 
   const validate = async (e) => {
@@ -59,7 +48,7 @@ function ResetPassword() {
     try {
       const { data } = await axios.post(
         `${process.env.REACT_APP_BACKEND_URL}/validateResetCode`,
-        { email: foundUser.email, code: code },
+        { email, code },
       );
       if (data.message === "ok") {
         // [CWE-640] Fix: the server returns a signed, single-use ticket alongside `ok`.
@@ -71,7 +60,11 @@ function ResetPassword() {
         alert(data.message);
       }
     } catch (error) {
-      // console.log(error.message)
+      // [CWE-204] The server returns one generic "Invalid or expired reset code" for a
+      // wrong code and for an unregistered address alike, so showing it is safe.
+      alert(
+        error.response?.data?.message ?? "Invalid or expired reset code",
+      );
     }
   };
   const changep = async (e) => {
@@ -119,26 +112,15 @@ function ResetPassword() {
         onChange={handleInputChange}
         className="user-search-input"
       />
-      <button onClick={handleSearchClick} className="user-search-button">
-        Search
+      <button onClick={sendCode} className="user-search-button">
+        Send code
       </button>
-      {foundUser ? (
-        <div className="user-search-results">
-          <p>Name: {foundUser.name}</p>
-          <p>Email: {foundUser.email}</p>
-          <p>
-            picture: <img className="imgres" src={foundUser.picture} alt="" />
-          </p>
-          <button onClick={sendCode}>send code</button>
-        </div>
-      ) : (
-        <p className="user-search-no-results">
-          No user found with that email address.
-        </p>
-      )}
       <div className={`${foundsend ? "" : "hidden"}`}>
         <form className="">
-          <label htmlFor="email-input">Code Has been Sent to your email</label>
+          {/* [CWE-204] One message for every address, registered or not. */}
+          <label htmlFor="email-input">
+            If that email address is registered, a reset code has been sent to it.
+          </label>
           <input
             type="text"
             // id="email-input"
@@ -165,7 +147,7 @@ function ResetPassword() {
             }}
             className="user-search-input"
           />
-          <PasswordStrength password={pass} userInputs={[foundUser?.email]} />
+          <PasswordStrength password={pass} userInputs={[email]} />
           <button onClick={(e) => changep(e)}>Confirm</button>
         </form>
       </div>

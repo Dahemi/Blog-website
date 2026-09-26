@@ -26,6 +26,14 @@ const { validatePassword, BCRYPT_COST } = require("../helper/passwordPolicy");
 const Verify = require("../models/emailverify");
 const { sendVerifyCode } = require("../helper/mailverifymail");
 
+// [CWE-208] A throwaway bcrypt hash at the same cost as the live policy, compared
+// against on the login paths where no real hash exists. Its plaintext is irrelevant --
+// it is never expected to match; it exists only so that a failed login costs the same
+// time whether or not the account exists. Generated at BCRYPT_COST (12); if the cost
+// in helper/passwordPolicy.js changes, regenerate this so the paths stay balanced.
+const DUMMY_HASH =
+  "$2b$12$1cQ9Ja3i0eDEBVIJg/muhuKGy.na9UdnceTAKkjXRwvgseQlk6Vfm";
+
 
 
 exports.sendreportmails = async (req, res) => {
@@ -819,22 +827,27 @@ exports.login = async (req, res) => {
     }
     const { temail, password } = parsed.data;
     const user = await User.findOne({ email: temail });
-    if (!user) {
-      return res.status(400).json({
-        message: "the email you entered is not registered.",
-      });
+
+    // [CWE-204] Every failed-authentication branch below returns this one response.
+    // Previously the three branches were distinguishable -- "the email you entered is
+    // not registered" vs "You have account associated with google" vs "Invalid
+    // Credentials" -- which let an unauthenticated caller test any address and learn
+    // both whether an account exists and which auth method it uses.
+    const invalidCredentials = () =>
+      res.status(400).json({ message: "Invalid email or password." });
+
+    // [CWE-208] Equalise timing. bcrypt.compare only ran when the user existed, so an
+    // unknown email returned in ~2ms and a known one in ~200ms at cost 12 -- a clock
+    // is just as good an oracle as an error message. Comparing against a throwaway
+    // hash of the same cost makes both paths do the same work.
+    if (!user || user.googleId) {
+      await bcrypt.compare(password, DUMMY_HASH);
+      return invalidCredentials();
     }
-    if (user.googleId) {
-      return res.status(400).json({
-        message:
-          "You have account associated with google, trying signing up again using google",
-      });
-    }
+
     const check = await bcrypt.compare(password, user.password);
     if (!check) {
-      return res.status(400).json({
-        message: "Invalid Credentials. Please Try Again.",
-      });
+      return invalidCredentials();
     }
     if (user.verify === false) {
       return res.status(403).json({
@@ -900,26 +913,13 @@ exports.getUser = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-exports.findOutUser = async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email: email });
-    if (user) {
-      if (!user.googleId) {
-        res.status(200).json(user);
-      } else {
-        return res.status(400).json({
-          message:
-            "You have account associated with google, trying signing up again using google",
-        });
-      }
-    } else {
-      res.status(404).json({ message: "no such user exists" });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+// [CWE-204] findOutUser was removed. Its only purpose was to tell an unauthenticated
+// caller whether an email address had an account (200 with the user object vs 404 vs a
+// distinct 400 for Google accounts), which is the enumeration oracle itself -- there is
+// no way to answer that question safely while still answering it. The reset flow no
+// longer needs it: since the [CWE-640] fix, sendResetPasswordCode returns the same
+// response for every address, so the client posts the typed email straight to it.
+// See client/src/pages/ResetPassword.js.
 exports.sendResetPasswordCode = async (req, res) => {
   // [CWE-640] Fix: the response is now identical whether or not the address is registered,
   // so this endpoint can no longer be used to enumerate accounts. Previously an unknown

@@ -3,19 +3,7 @@ import axios from "axios";
 export const clearCookie = (cookieName) => {
   document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
 };
-export const checkifverify = async (mail) => {
-  try {
-    const { data } = await axios.post(
-      `${process.env.REACT_APP_BACKEND_URL}/checkifverify`, {
-      mail
-    }
-    )
-    return data;
-  } catch (error) {
-    return { msg: "error" };
-  }
-}
-
+// [CWE-204] checkifverify() was removed along with the endpoint it called. 
 export const checkotpv = async (mail, otp) => {
   try {
     const { data } = await axios.post(
