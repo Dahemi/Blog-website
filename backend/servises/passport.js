@@ -47,24 +47,19 @@ passport.use(new GoogleStrategy({
   }
 ));
 
-// passport.serializeUser((user, done) => {
-//   done(null, user.id)
-// })
-
-// passport.deserializeUser((id, done) => {
-//   User.findById(id).then((user) => {
-//     done(null, user)
-//   })
-// })
-
+// [CWE-200] Only the user id goes into the session. Previously the whole user
+// document was serialized, so the bcrypt hash was persisted into the
+// `mySessions` collection in MongoDB on every Google sign-in.
 passport.serializeUser((user, done) => {
-  done(null, user);
-
-})
+  done(null, user.id);
+});
 
 // used to deserialize the user
-passport.deserializeUser((user, done) => {
-  done(null, user);
-})
+passport.deserializeUser((id, done) => {
+  User.findById(id)
+    .select("-password")
+    .then((user) => done(null, user))
+    .catch((err) => done(err, null));
+});
 // passport.initialize();
 // passport.session();
