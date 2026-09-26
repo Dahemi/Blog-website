@@ -935,7 +935,7 @@ exports.sendResetPasswordCode = async (req, res) => {
       // Mongoose 8 removed findOneAndRemove(); the original code called it here, so this
       // endpoint threw a TypeError and 500'd for EVERY email — password reset never worked.
       await Code.findOneAndDelete({ user: user._id });
-      const code = generateCode(5);
+      const code = generateCode(6);
       await new Code({
         code,
         user: user._id,
@@ -962,7 +962,28 @@ exports.validateResetCode = async (req, res) => {
     }
 
     const Dbcode = await Code.findOne({ user: user._id });
-    if (!Dbcode || String(Dbcode.code) !== String(code)) {
+    if (!Dbcode) {
+      return res.status(400).json(invalid);
+    }
+
+    // [CWE-640] Fix: explicit 30-minute expiry. The TTL index alone is not enough — Mongo's
+    // TTL monitor only sweeps about once a minute, and before `timestamps` was added to the
+    // Code schema createdAt was never stored, so codes never expired at all.
+    const THIRTY_MIN = 30 * 60 * 1000;
+    if (Date.now() - new Date(Dbcode.createdAt).getTime() > THIRTY_MIN) {
+      await Code.findByIdAndDelete(Dbcode._id);
+      return res.status(400).json(invalid);
+    }
+
+    // [CWE-640] Fix: burn the code after 5 wrong attempts so it cannot be brute-forced.
+    if (Dbcode.attempts >= 5) {
+      await Code.findByIdAndDelete(Dbcode._id);
+      return res.status(400).json(invalid);
+    }
+
+    if (String(Dbcode.code) !== String(code)) {
+      Dbcode.attempts += 1;
+      await Dbcode.save();
       return res.status(400).json(invalid);
     }
 
