@@ -40,7 +40,6 @@ const {
 } = require("../controllers/user");
 const {
   sendmail,
-  checkifverify,
   verifycode,
   checkotpv,
 } = require("../controllers/verifyemail");
@@ -63,7 +62,7 @@ const {
 router.post("/register", registerLimiter, register);
 router.post("/checkotpv", checkotpv);
 
-router.post("/checkifverify", checkifverify);
+// [CWE-204] /checkifverify removed 
 router.post("/login", loginLimiter, login);
 
 // [CWE-384] Fix: promisified session helpers. After authentication succeeds we rotate the

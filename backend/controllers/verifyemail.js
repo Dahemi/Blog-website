@@ -50,26 +50,7 @@ const sendmail = async (req, res) => {
 
     }
 }
-const checkifverify = async (req, res) => {
-
-    try {
-        const { mail } = req.body
-        const data = await User.findOne({ email: mail });
-        if (!data) {
-            return res.status(200).json({ msg: "ne" });
-        }
-        if (data.verify === true) {
-            return res.status(200).json({ msg: "ok" });
-        }
-        else {
-            return res.status(200).json({ msg: "not" });
-
-        }
-    } catch (error) {
-        return res.status(400).json({ msg: "error" });
-    }
-}
-
+// [CWE-204] checkifverify was removed. 
 const verifycode = async (req, res) => {
 
     try {
@@ -90,9 +71,9 @@ const verifycode = async (req, res) => {
     }
 }
 
+// [CWE-204] checkifverify is gone — see the comment where it used to be defined, above.
 module.exports = {
     sendmail,
-    checkifverify,
     verifycode,
     checkotpv
 }

@@ -7,7 +7,6 @@ import axios from "axios";
 import { useDispatch } from "react-redux";
 import Cookies from "js-cookie";
 import {
-  checkifverify,
   sendmail,
   checkotpv
 } from "../helpers/index"
@@ -40,28 +39,12 @@ function Auth() {
     var temail = email.toLowerCase()
 
     if (state === "Log In") {
-      try {
-        if (!temail || !password) {
-          setError('All feilds are required !')
-          return;
-        }
-        const data = await checkifverify(temail);
-        if (data.msg === "ok") {
-
-        }
-        else if (
-          data.msg === 'ne'
-        ) {
-          setError("Please Sign Up First ");
-          return;
-        }
-        else {
-          setError("Please Sign up and Verify Your Email ");
-          return;
-        }
-      } catch (error) {
-        // console.log(error);
+      if (!temail || !password) {
+        setError('All feilds are required !')
+        return;
       }
+      // [CWE-204] Fix: this used to call /checkifverify before attempting the login.
+      // Removing it closes the oracle and keeps the [V11] verification prompt, which only fires once bcrypt.compare has succeeded.
       logIn();
     } else {
       if (!name || !temail || !password) {

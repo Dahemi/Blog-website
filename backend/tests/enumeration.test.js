@@ -209,3 +209,51 @@ describe("[CWE-204] the /findOutUser enumeration endpoint is gone", () => {
     expect(page).not.toMatch(/axios\.post\([^)]*findOutUser/s);
   });
 });
+
+// Found while filming the demo: the server's uniform /login response was being bypassed
+// entirely, because the login page asked /checkifverify first and branched on its answer.
+// A uniform endpoint is worthless if the client queries a different one before it.
+describe("[CWE-204] the /checkifverify pre-check oracle is gone", () => {
+  it("is no longer exported by the verifyemail controller", () => {
+    const controllers = require("../controllers/verifyemail");
+    expect(controllers.checkifverify).toBeUndefined();
+  });
+
+  it("is no longer registered as a route", () => {
+    const routes = fs.readFileSync(
+      path.join(__dirname, "..", "routes", "user.js"),
+      "utf8",
+    );
+    expect(routes).not.toMatch(/router\.\w+\(\s*["']\/checkifverify["']/);
+  });
+
+  it("the login page no longer pre-checks the address before submitting", () => {
+    const page = fs.readFileSync(
+      path.join(__dirname, "..", "..", "client", "src", "pages", "Auth.js"),
+      "utf8",
+    );
+    // Neither the helper call nor the setError branches it drove may remain. Matched as
+    // code rather than as bare strings, since the comment explaining the fix names them.
+    expect(page).not.toMatch(/await\s+checkifverify\s*\(/);
+    expect(page).not.toMatch(/setError\(\s*["'`]Please Sign Up First/);
+    expect(page).not.toMatch(/setError\(\s*["'`]Please Sign up and Verify Your Email/);
+  });
+
+  it("the client helper that called it is gone", () => {
+    const helpers = fs.readFileSync(
+      path.join(__dirname, "..", "..", "client", "src", "helpers", "index.js"),
+      "utf8",
+    );
+    expect(helpers).not.toMatch(/export const checkifverify/);
+  });
+
+  it("the verification flow's own endpoints are untouched", () => {
+    // [V11] Registration and OTP verification must keep working — the fix removes the
+    // existence oracle, not the verification feature.
+    const controllers = require("../controllers/verifyemail");
+    expect(typeof controllers.sendmail).toBe("function");
+    expect(typeof controllers.checkotpv).toBe("function");
+    expect(typeof controllers.verifycode).toBe("function");
+  });
+});
+
