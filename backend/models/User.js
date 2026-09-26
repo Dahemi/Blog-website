@@ -77,5 +77,17 @@ const userSchema = new Schema(
   { timestamps: true }
 );
 
+// [CWE-200] Defence in depth: strip credential material from every serialization
+// of a User document, so that any res.json(userDoc) in the app is safe by default.
+// The explicit DTO in helper/userDto.js remains the primary control.
+userSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.googleId;
+    delete ret.__v;
+    return ret;
+  },
+});
+
 module.exports = model("User", userSchema);
 
